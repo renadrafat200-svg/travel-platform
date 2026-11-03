@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AppController } from './app.controller';
+import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -20,7 +22,9 @@ import { validateEnv } from './config/env.validation';
       }),
     }),
 
-    // Feature modules go here as they are built, e.g. AuthModule, UsersModule, FlightsModule ...
+    // Feature modules. Add yours below, e.g. FlightsModule, HotelsModule ...
+    UsersModule,
+    AuthModule,
   ],
   controllers: [AppController],
 })
