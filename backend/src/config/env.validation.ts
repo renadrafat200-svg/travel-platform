@@ -31,6 +31,15 @@ class EnvironmentVariables {
   @IsString()
   FRONTEND_URL?: string;
 
+  // Seeded administrator (created on first start if no admin exists)
+  @IsOptional()
+  @IsString()
+  ADMIN_EMAIL?: string;
+
+  @IsOptional()
+  @IsString()
+  ADMIN_PASSWORD?: string;
+
   // Needed later by the payments and itinerary modules
   @IsOptional()
   @IsString()
