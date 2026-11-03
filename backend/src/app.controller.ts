@@ -1,12 +1,23 @@
 import { Controller, Get } from '@nestjs/common';
-import { AppService } from './app.service';
+import { InjectConnection } from '@nestjs/mongoose';
+import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { Connection } from 'mongoose';
 
-@Controller()
+@ApiTags('Health')
+@Controller('health')
 export class AppController {
-  constructor(private readonly appService: AppService) {}
+  constructor(@InjectConnection() private readonly connection: Connection) {}
 
+  // GET /api/health — quick check that the API is up and connected to MongoDB
   @Get()
-  getHello(): string {
-    return this.appService.getHello();
+  @ApiOkResponse({ description: 'API status and database connection state' })
+  check() {
+    const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+    return {
+      status: 'ok',
+      database: states[this.connection.readyState] ?? 'unknown',
+      databaseName: this.connection.name,
+      time: new Date().toISOString(),
+    };
   }
 }
