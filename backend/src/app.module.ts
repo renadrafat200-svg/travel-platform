@@ -6,7 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { validateEnv } from './config/env.validation';
 import { AuditModule } from './audit/audit.module';
-
+import { AdminModule } from './admin/admin.module';
 @Module({
   imports: [
     // Loads backend/.env and stops the app at startup if a required variable is missing
@@ -24,11 +24,15 @@ import { AuditModule } from './audit/audit.module';
     }),
 
     // Feature modules. Add yours below, e.g. FlightsModule, HotelsModule ...
-    UsersModule,
+      UsersModule,
     AuthModule,
-    UsersModule,
+      UsersModule,
     AuthModule,
     AuditModule,
+        UsersModule,
+    AuthModule,
+    AuditModule,
+    AdminModule,
   ],
   controllers: [AppController],
 })
