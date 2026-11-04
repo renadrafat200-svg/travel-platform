@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { validateEnv } from './config/env.validation';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -25,6 +26,9 @@ import { validateEnv } from './config/env.validation';
     // Feature modules. Add yours below, e.g. FlightsModule, HotelsModule ...
     UsersModule,
     AuthModule,
+    UsersModule,
+    AuthModule,
+    AuditModule,
   ],
   controllers: [AppController],
 })
