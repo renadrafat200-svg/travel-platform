@@ -7,6 +7,7 @@ import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { validateEnv } from './config/env.validation';
 import { ReferenceDataModule } from './reference-data/reference-data.module';
+import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -30,6 +31,7 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     AuditModule,
     AdminModule,
+    ReportsModule,
     ReferenceDataModule,
   ],
   controllers: [AppController],
