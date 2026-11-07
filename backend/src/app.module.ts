@@ -7,6 +7,7 @@ import { UsersModule } from './users/users.module';
 import { validateEnv } from './config/env.validation';
 import { AuditModule } from './audit/audit.module';
 import { AdminModule } from './admin/admin.module';
+import { ReportsModule } from './reports/reports.module';
 @Module({
   imports: [
     // Loads backend/.env and stops the app at startup if a required variable is missing
@@ -33,6 +34,7 @@ import { AdminModule } from './admin/admin.module';
     AuthModule,
     AuditModule,
     AdminModule,
+    ReportsModule
   ],
   controllers: [AppController],
 })
