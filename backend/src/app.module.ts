@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
-import { AppController } from './app.controller';
-import { AuthModule } from './auth/auth.module';
-import { UsersModule } from './users/users.module';
-import { validateEnv } from './config/env.validation';
-import { AuditModule } from './audit/audit.module';
 import { AdminModule } from './admin/admin.module';
+import { AppController } from './app.controller';
+import { AuditModule } from './audit/audit.module';
+import { AuthModule } from './auth/auth.module';
+import { validateEnv } from './config/env.validation';
+import { ReferenceDataModule } from './reference-data/reference-data.module';
+import { UsersModule } from './users/users.module';
+
 @Module({
   imports: [
     // Loads backend/.env and stops the app at startup if a required variable is missing
@@ -24,15 +26,11 @@ import { AdminModule } from './admin/admin.module';
     }),
 
     // Feature modules. Add yours below, e.g. FlightsModule, HotelsModule ...
-      UsersModule,
-    AuthModule,
-      UsersModule,
-    AuthModule,
-    AuditModule,
-        UsersModule,
+    UsersModule,
     AuthModule,
     AuditModule,
     AdminModule,
+    ReferenceDataModule,
   ],
   controllers: [AppController],
 })
