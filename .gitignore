@@ -7,4 +7,5 @@ dist/
 Thumbs.db
 coverage/
 uploads/
-*.tsbuildinfoClaude outputs/
+*.tsbuildinfo
+Claude outputs/
