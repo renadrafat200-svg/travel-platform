@@ -1,0 +1,47 @@
+================================================
+Date: 2026-11-07
+Student: Malak
+Tool: Claude
+Related Requirement: FLT-02
+
+Prompt:
+I'm Member 2 and starting from scratch, what should I do step by step?
+Can you do these steps for me?
+
+How the output was used:
+Claude converted the official dataset into 4 CSV files and wrote the
+reference-data module (seeder + public airports/countries/cities/
+attractions endpoints). I ran it against our Atlas database, checked
+it loaded, and committed it.
+================================================
+Date: 2026-11-09
+Student: Malak
+Tool: Claude
+Related Requirement: FLT-01, FLT-04, FLT-08, FLT-09
+
+Prompt:
+What's left for me to do as Member 2? / I'm only done with the
+reference data, what do I do now?
+
+How the output was used:
+Claude wrote and tested the airlines module: airline profiles,
+baggage policy, cancellation/refund policy, and the rule that a
+moderator can only edit their own airline. I tested it in Swagger
+(created EgyptAir) and committed it.
+================================================
+Date: 2026-11-09
+Student: Malak
+Tool: Claude
+Related Requirement: FLT-03, FLT-04, FLT-05, FLT-06, FLT-11, FLT-12, FLT-15, FLT-17
+
+Prompt:
+What else should I do as Member 2? (flights and flight search)
+
+How the output was used:
+Claude wrote and tested the flights module: creating flights in each
+airport's local time (stored in UTC), cabins with seats and prices,
+schedule changes, cancellation, and public one-way/round-trip search
+with passenger counts, cabin class, price filters, sorting and
+pagination. I tested creating and searching a flight in Swagger and
+committed it.
+================================================
