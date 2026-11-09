@@ -56,6 +56,10 @@ export class ReferenceDataService {
     return doc ? toAirportView(doc) : null;
   }
 
+  async findCountry(code: string) {
+    return this.countries.findById(code.toUpperCase()).lean().exec();
+  }
+
   async findCity(cityId: string) {
     return this.cities.findById(cityId.toLowerCase()).lean().exec();
   }
