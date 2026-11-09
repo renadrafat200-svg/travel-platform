@@ -6,6 +6,7 @@ import { AirlinesModule } from './airlines/airlines.module';
 import { AppController } from './app.controller';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
+import { FlightsModule } from './flights/flights.module';
 import { validateEnv } from './config/env.validation';
 import { ReferenceDataModule } from './reference-data/reference-data.module';
 import { ReportsModule } from './reports/reports.module';
@@ -35,6 +36,7 @@ import { UsersModule } from './users/users.module';
     ReportsModule,
     ReferenceDataModule,
     AirlinesModule,
+    FlightsModule,
   ],
   controllers: [AppController],
 })

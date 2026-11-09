@@ -175,6 +175,38 @@ export class AirlinesService {
     return Types.ObjectId.isValid(id) && !!(await this.airlineModel.exists({ _id: id }));
   }
 
+  /** Flights: basic info about one airline (null if it does not exist) */
+  async getBasic(id: string | Types.ObjectId) {
+    if (!Types.ObjectId.isValid(id.toString())) return null;
+    const a = await this.airlineModel
+      .findById(id, { name: 1, iataCode: 1, isActive: 1, 'baggagePolicy.currency': 1 })
+      .lean()
+      .exec();
+    return a
+      ? {
+          id: a._id.toString(),
+          name: a.name,
+          iataCode: a.iataCode,
+          isActive: a.isActive,
+          currency: a.baggagePolicy.currency,
+        }
+      : null;
+  }
+
+  /** Flight search: name and code of several airlines at once, keyed by id */
+  async summaries(ids: (string | Types.ObjectId)[]) {
+    const docs = await this.airlineModel
+      .find({ _id: { $in: ids } }, { name: 1, iataCode: 1 })
+      .lean()
+      .exec();
+    return new Map(
+      docs.map((d) => [
+        d._id.toString(),
+        { id: d._id.toString(), name: d.name, iataCode: d.iataCode },
+      ]),
+    );
+  }
+
   /** Flights / flight search: is this airline allowed to sell tickets right now? */
   async isActive(id: string | Types.ObjectId): Promise<boolean> {
     return !!(await this.airlineModel.exists({ _id: id, isActive: true }));
