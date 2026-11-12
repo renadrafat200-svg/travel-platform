@@ -75,7 +75,21 @@ export class FlightBookingsController {
         return this.bookings.findOne(user, id);
     }
 
-    // [PR2] cancel route goes here
+    @Post(':id/cancel')
+    @HttpCode(200)
+    @ApiOperation({
+        summary: 'Cancel a booking; paid bookings get a refund from the airline’s policy (FLT-26)',
+    })
+    @ApiOkResponse({ description: 'Cancelled booking with refundPercent and refundAmount' })
+    @ApiBadRequestResponse({ description: 'Already cancelled/expired, or the flight has departed' })
+    @ApiForbiddenResponse({ description: 'Not your booking' })
+    cancel(
+        @CurrentUser() user: AuthUser,
+        @Param('id') id: string,
+        @Body() dto: CancelFlightBookingDto,
+    ) {
+        return this.bookings.cancel(user, id, dto);
+    }
 
     // [PR3] e-ticket route goes here
 }

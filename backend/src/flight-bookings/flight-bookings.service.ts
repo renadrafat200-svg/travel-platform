@@ -63,7 +63,10 @@ export class FlightBookingsService {
         private readonly airlines: AirlinesService,
     ) { }
 
-    // [PR2] onModuleInit goes here
+    /** Nest calls this at startup. When an airline cancels a flight (FLT-06), its bookings are cancelled here too */
+    onModuleInit() {
+        this.flights.onFlightCancelled((flightId, reason) => this.cancelAllForFlight(flightId, reason));
+    }
 
     // =====================================================================================
     // Booking with a seat hold (FLT-22)
@@ -257,7 +260,136 @@ export class FlightBookingsService {
 
     // [PR4] moderator views go here
 
-    // [PR2] cancelling goes here
+    // =====================================================================================
+    // Cancelling
+    // =====================================================================================
+
+    /**
+     * User cancels their booking.
+     * - pending (not paid yet): seats go back, nothing to refund
+     * - confirmed: seats go back, refund = the airline's cancellation policy for how many
+     *   hours are left before each flight. Member 6 sends the money back.
+     */
+    async cancel(user: AuthUser, id: string, dto: CancelFlightBookingDto) {
+        const booking = await this.getOwned(user, id);
+        const by = user.role === Role.ADMIN ? 'admin' : 'user';
+
+        if (booking.status === BookingStatus.PENDING) {
+            const updated = await this.bookingModel
+                .findOneAndUpdate(
+                    { _id: booking._id, status: BookingStatus.PENDING },
+                    {
+                        $set: {
+                            status: BookingStatus.CANCELLED,
+                            cancelledAt: new Date(),
+                            cancelledBy: by,
+                            cancellationReason: dto.reason,
+                            refundPercent: 0,
+                            refundAmount: 0,
+                            refundStatus: RefundStatus.NONE,
+                        },
+                    },
+                    { returnDocument: 'after' },
+                )
+                .exec();
+            if (!updated) throw new ConflictException('This booking changed meanwhile; please reload it');
+            await this.releaseSeats(updated);
+            return this.toView(updated);
+        }
+
+        if (booking.status !== BookingStatus.CONFIRMED) {
+            throw new BadRequestException(`This booking is already ${booking.status}`);
+        }
+
+        // Confirmed: refund per flight, using each flight's CURRENT departure time
+        const now = Date.now();
+        let refundAmount = 0;
+        for (const leg of booking.legs) {
+            const flight = await this.flightModel
+                .findById(leg.flight, { departureTime: 1 })
+                .lean()
+                .exec();
+            const departure = flight?.departureTime ?? leg.departureTime;
+            if (departure.getTime() <= now) {
+                throw new BadRequestException(
+                    `Flight ${leg.flightNumber} has already departed, so this booking can no longer be cancelled`,
+                );
+            }
+            const hoursLeft = (departure.getTime() - now) / HOUR;
+            const percent = await this.airlines.refundPercent(leg.airline, hoursLeft);
+            refundAmount += (leg.amount * percent) / 100;
+        }
+        refundAmount = round2(refundAmount);
+        const refundPercent =
+            booking.totalAmount > 0 ? Math.round((refundAmount / booking.totalAmount) * 100) : 0;
+
+        const updated = await this.bookingModel
+            .findOneAndUpdate(
+                { _id: booking._id, status: BookingStatus.CONFIRMED },
+                {
+                    $set: {
+                        status: BookingStatus.CANCELLED,
+                        cancelledAt: new Date(),
+                        cancelledBy: by,
+                        cancellationReason: dto.reason,
+                        refundPercent,
+                        refundAmount,
+                        refundStatus: refundAmount > 0 ? RefundStatus.PENDING : RefundStatus.NONE,
+                    },
+                },
+                { returnDocument: 'after' },
+            )
+            .exec();
+        if (!updated) throw new ConflictException('This booking changed meanwhile; please reload it');
+        await this.releaseSeats(updated);
+        // TODO (Member 6): issue the Stripe refund for refundAmount, then call markRefunded(id).
+        // TODO (Member 6): notify the user that the booking was cancelled.
+        return this.toView(updated);
+    }
+
+    /**
+     * The airline cancelled a flight (called automatically from FlightsService.cancel).
+     * Every booking on it is cancelled; paid ones get a FULL refund, whatever the policy says.
+     */
+    async cancelAllForFlight(flightId: Types.ObjectId, reason?: string) {
+        const bookings = await this.bookingModel
+            .find({
+                'legs.flight': flightId,
+                status: { $in: [BookingStatus.PENDING, BookingStatus.CONFIRMED] },
+            })
+            .exec();
+
+        let cancelled = 0;
+        for (const b of bookings) {
+            const paid = b.status === BookingStatus.CONFIRMED;
+            const updated = await this.bookingModel
+                .findOneAndUpdate(
+                    { _id: b._id, status: b.status },
+                    {
+                        $set: {
+                            status: BookingStatus.CANCELLED,
+                            cancelledAt: new Date(),
+                            cancelledBy: 'airline',
+                            cancellationReason: reason ?? 'Flight cancelled by the airline',
+                            refundPercent: paid ? 100 : 0,
+                            refundAmount: paid ? b.totalAmount : 0,
+                            refundStatus: paid && b.totalAmount > 0 ? RefundStatus.PENDING : RefundStatus.NONE,
+                        },
+                    },
+                    { returnDocument: 'after' },
+                )
+                .exec();
+            if (!updated) continue; // someone else changed it first; they already handled the seats
+            await this.releaseSeats(updated);
+            cancelled++;
+            // TODO (Member 6): refund paid bookings in full and notify each user.
+        }
+        if (cancelled)
+            this.logger.log(
+                `Cancelled ${cancelled} booking(s) on cancelled flight ${flightId.toString()}`,
+            );
+        return { cancelled };
+    }
 
     // =====================================================================================
     // Hold expiry
