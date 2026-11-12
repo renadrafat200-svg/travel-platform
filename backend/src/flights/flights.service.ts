@@ -29,8 +29,12 @@ const MAX_DURATION_MINUTES = 24 * 60;
 type AirportInfo = { iataCode: string; name: string; cityId: string; timeZone: string };
 type AirlineInfo = { id: string; name: string; iataCode: string };
 
+type FlightCancelledListener = (flightId: Types.ObjectId, reason?: string) => Promise<unknown>;
+
 @Injectable()
 export class FlightsService {
+    /** Other modules (flight bookings) register here to react when a flight is cancelled */
+    private readonly cancelledListeners: FlightCancelledListener[] = [];
   constructor(
     @InjectModel(Flight.name) private readonly flightModel: Model<Flight>,
     private readonly airlines: AirlinesService,
@@ -177,7 +181,8 @@ export class FlightsService {
       targetId: flight._id,
       details: { reason: dto.reason, flightNumber: flight.flightNumber },
     });
-    // TODO (Members 3 and 6): cancel its bookings, refund them in full, and notify the passengers.
+      // Member 3: cancels every booking on this flight and marks paid ones for a full refund
+      for (const listener of this.cancelledListeners) await listener(flight._id, dto.reason);
     return this.fullView(flight);
   }
 
@@ -230,7 +235,11 @@ export class FlightsService {
     return this.fullView(flight);
   }
 
-  // ---------- shared helpers (also used by FlightSearchService) ----------
+    /** FlightBookingsService calls this once at startup (avoids a circular module import) */
+    onFlightCancelled(listener: FlightCancelledListener) {
+        this.cancelledListeners.push(listener);
+    }
+    // ---------- shared helpers (also used by FlightSearchService) ----------
 
   async airportMap(codes: string[]): Promise<Record<string, AirportInfo>> {
     const unique = [...new Set(codes)];
