@@ -91,7 +91,14 @@ export class FlightBookingsController {
         return this.bookings.cancel(user, id, dto);
     }
 
-    // [PR3] e-ticket route goes here
+    @Get(':id/e-ticket')
+    @ApiOperation({ summary: 'E-ticket of a confirmed booking (FLT-23)' })
+    @ApiOkResponse({ description: 'Ticket numbers, passengers and current flight times' })
+    @ApiBadRequestResponse({ description: 'Booking is not confirmed' })
+    @ApiForbiddenResponse({ description: 'Not your booking' })
+    eTicket(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+        return this.bookings.eTicket(user, id);
+    }
 }
 
 // [PR4] moderator controller goes here

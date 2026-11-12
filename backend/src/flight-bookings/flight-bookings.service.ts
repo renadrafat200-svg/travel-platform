@@ -256,7 +256,47 @@ export class FlightBookingsService {
         return this.toView(booking);
     }
 
-    // [PR3] e-ticket goes here
+    /**
+ * E-ticket for a confirmed booking: ticket numbers, passengers, and the flights with
+ * their CURRENT times (so a schedule change shows up on the ticket).
+ */
+    async eTicket(user: AuthUser, id: string) {
+        const booking = await this.getOwned(user, id);
+        if (booking.status !== BookingStatus.CONFIRMED) {
+            throw new BadRequestException('E-tickets are only available for confirmed (paid) bookings');
+        }
+        const flights = await Promise.all(
+            booking.legs.map(async (leg) => {
+                const flight = await this.flightModel.findById(leg.flight).exec();
+                return flight ? this.flights.fullView(flight) : null;
+            }),
+        );
+        return {
+            reference: booking.reference,
+            status: booking.status,
+            issuedAt: booking.confirmedAt,
+            totalPaid: booking.totalAmount,
+            currency: booking.currency,
+            flights: booking.legs.map((leg, i) => {
+                const f = flights[i];
+                return {
+                    flightNumber: f?.flightNumber ?? leg.flightNumber,
+                    airline: f?.airline,
+                    cabinClass: leg.cabinClass,
+                    flightStatus: f?.status,
+                    departure: f?.departure,
+                    arrival: f?.arrival,
+                    durationMinutes: f?.durationMinutes,
+                    passengers: booking.passengers.map((p, j) => ({
+                        name: `${p.firstName} ${p.lastName}`,
+                        type: p.type,
+                        ticketNumber: leg.ticketNumbers[j],
+                        extraBags: p.extraBags,
+                    })),
+                };
+            }),
+        };
+    }
 
     // [PR4] moderator views go here
 
