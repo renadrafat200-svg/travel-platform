@@ -19,6 +19,8 @@ import { Flight, FlightDocument, FlightStatus } from '../flights/schemas/flight.
 import {
     CancelFlightBookingDto,
     CreateFlightBookingDto,
+    FlightBookingsQueryDto,
+    HoldFlightDto,
     LegSelectionDto,
     MyFlightBookingsQueryDto,
     PassengerDto,
@@ -29,6 +31,7 @@ import {
     HOLD_MINUTES,
     INFANT_MAX_AGE,
     MAX_ACTIVE_HOLDS_PER_USER,
+    MAX_PASSENGERS,
 } from './flight-booking.constants';
 import {
     BookingLeg,
@@ -71,10 +74,23 @@ export class FlightBookingsService implements OnModuleInit {
     // =====================================================================================
 
     /**
-     * Holds the seats for HOLD_MINUTES and creates a pending booking with the full price.
-     * The booking becomes confirmed only when Payments (Member 6) calls confirm().
+     * Step 1 (FLT-22): hold seats for HOLD_MINUTES. Only the flights, cabin and passenger
+     * counts are needed here; names, dates of birth and bags come in step 2.
+     * The hold is saved as a pending booking whose price already includes the fares.
      */
-    async create(user: AuthUser, dto: CreateFlightBookingDto) {
+    async hold(user: AuthUser, dto: HoldFlightDto) {
+        const counts = {
+            adults: dto.adults,
+            children: dto.children ?? 0,
+            infants: dto.infants ?? 0,
+        };
+        if (counts.adults + counts.children + counts.infants > MAX_PASSENGERS) {
+            throw new BadRequestException(`At most ${MAX_PASSENGERS} passengers per booking`);
+        }
+        if (counts.infants > counts.adults) {
+            throw new BadRequestException('Each infant must travel on the lap of a different adult');
+        }
+
         const activeHolds = await this.bookingModel.countDocuments({
             user: new Types.ObjectId(user.id),
             status: BookingStatus.PENDING,
@@ -113,18 +129,16 @@ export class FlightBookingsService implements OnModuleInit {
             }
         }
 
-        // 2. Passengers: work out adult/child/infant from the date of birth
-        const passengers = this.buildPassengers(dto.passengers, outbound.flight.departureTime);
-        const seatCount = passengers.filter((p) => p.type !== PassengerType.INFANT).length;
-
-        // 3. Price every flight (fares + extra bags), copied into the booking
+        // 2. Price the fares (bags are added in step 2), copied into the booking
+        const types = this.typesFromCounts(counts);
+        const seatCount = counts.adults + counts.children; // infants do not get a seat
         const legs: BookingLeg[] = [];
         for (const sel of back ? [outbound, back] : [outbound]) {
-            legs.push(await this.priceLeg(sel.flight, sel.cabinId, passengers, seatCount));
+            legs.push(await this.priceLeg(sel.flight, sel.cabinId, types, 0, seatCount));
         }
         const totalAmount = round2(legs.reduce((sum, l) => sum + l.amount, 0));
 
-        // 4. Take the seats: all flights or none, each one atomically
+        // 3. Take the seats: all flights or none, each one atomically
         const requests = legs.map((l) => ({
             flightId: l.flight,
             cabinId: l.cabinId,
@@ -133,12 +147,13 @@ export class FlightBookingsService implements OnModuleInit {
         }));
         await this.seats.takeAll(requests);
 
-        // 5. Save the booking. If saving fails, give the seats back.
+        // 4. Save the hold. If saving fails, give the seats back.
         try {
             const booking = await this.createWithUniqueReference({
                 user: new Types.ObjectId(user.id),
                 legs,
-                passengers,
+                passengerCounts: counts,
+                passengers: [],
                 totalAmount,
                 currency: outbound.flight.currency,
                 status: BookingStatus.PENDING,
@@ -149,6 +164,63 @@ export class FlightBookingsService implements OnModuleInit {
             await this.seats.releaseAll(requests);
             throw err;
         }
+    }
+
+    /**
+     * Step 2 (FLT-19, FLT-21): passenger details and extra baggage for a hold.
+     * The passengers must match the counts that were held (worked out from dates of birth),
+     * and the hold must still be running. Can be sent again to correct details before paying.
+     */
+    async addPassengerDetails(user: AuthUser, dto: CreateFlightBookingDto) {
+        const booking = await this.getOwned(user, dto.holdId);
+        if (booking.status !== BookingStatus.PENDING) {
+            throw new BadRequestException(`This hold is ${booking.status}. Start a new one.`);
+        }
+
+        const passengers = this.buildPassengers(dto.passengers, booking.legs[0].departureTime);
+        const got = {
+            adults: passengers.filter((p) => p.type === PassengerType.ADULT).length,
+            children: passengers.filter((p) => p.type === PassengerType.CHILD).length,
+            infants: passengers.filter((p) => p.type === PassengerType.INFANT).length,
+        };
+        const held = booking.passengerCounts;
+        if (
+            got.adults !== held.adults ||
+            got.children !== held.children ||
+            got.infants !== held.infants
+        ) {
+            throw new BadRequestException(
+                `Seats were held for ${held.adults} adult(s), ${held.children} child(ren) and ` +
+                `${held.infants} infant(s), but these dates of birth give ${got.adults}, ` +
+                `${got.children} and ${got.infants}. Start a new hold with the right counts.`,
+            );
+        }
+
+        // Re-price each flight with the extra bags
+        const bags = passengers.reduce((sum, p) => sum + p.extraBags, 0);
+        const legs = [];
+        for (const leg of booking.toObject().legs) {
+            const baggageAmount = await this.baggageFee(
+                leg.airline,
+                leg.flightNumber,
+                booking.currency,
+                bags,
+            );
+            legs.push({ ...leg, baggageAmount, amount: round2(leg.fareAmount + baggageAmount) });
+        }
+        const totalAmount = round2(legs.reduce((sum, l) => sum + l.amount, 0));
+
+        const updated = await this.bookingModel
+            .findOneAndUpdate(
+                { _id: booking._id, status: BookingStatus.PENDING, holdExpiresAt: { $gt: new Date() } },
+                { $set: { passengers, legs, totalAmount, detailsAddedAt: new Date() } },
+                { returnDocument: 'after' },
+            )
+            .exec();
+        if (!updated) {
+            throw new ConflictException('The seat hold expired. Start a new one.');
+        }
+        return this.toView(updated);
     }
 
     // =====================================================================================
@@ -227,12 +299,9 @@ export class FlightBookingsService implements OnModuleInit {
         };
     }
 
-    /** Airline moderator: everyone with a confirmed ticket on one of their flights */
+    /** Airline moderator: everyone with a confirmed ticket on one of their flights (used by the export) */
     async passengerList(user: AuthUser, flightId: string) {
-        if (!Types.ObjectId.isValid(flightId)) throw new BadRequestException('Invalid flight id');
-        const flight = await this.flightModel.findById(flightId).exec();
-        if (!flight) throw new NotFoundException('Flight not found');
-        assertManagesProvider(user, ProviderType.AIRLINE, flight.airline);
+        const flight = await this.getManagedFlight(user, flightId);
 
         const bookings = await this.bookingModel
             .find({ 'legs.flight': flight._id, status: BookingStatus.CONFIRMED })
@@ -252,17 +321,77 @@ export class FlightBookingsService implements OnModuleInit {
             }));
         });
         return {
-            flight: {
-                id: flight._id.toString(),
-                flightNumber: flight.flightNumber,
-                route: `${flight.origin}-${flight.destination}`,
-                departureUtc: flight.departureTime.toISOString(),
-                status: flight.status,
-            },
+            flight: this.flightSummary(flight),
             totalPassengers: items.length,
             seatedPassengers: items.filter((p) => p.type !== PassengerType.INFANT).length,
             infants: items.filter((p) => p.type === PassengerType.INFANT).length,
             items,
+        };
+    }
+
+    /** FLT-29: airline moderator sees the bookings on one of their flights */
+    async bookingsForFlight(user: AuthUser, flightId: string, query: FlightBookingsQueryDto) {
+        const flight = await this.getManagedFlight(user, flightId);
+        const filter: QueryFilter<FlightBooking> = { 'legs.flight': flight._id };
+        if (query.status) filter.status = query.status;
+        const [docs, total] = await Promise.all([
+            this.bookingModel
+                .find(filter)
+                .sort({ createdAt: -1 })
+                .skip(query.skip)
+                .limit(query.limit)
+                .exec(),
+            this.bookingModel.countDocuments(filter).exec(),
+        ]);
+        const items = docs.map((b) => {
+            const leg = b.legs.find((l) => l.flight.equals(flight._id))!;
+            return {
+                id: b._id.toString(),
+                reference: b.reference,
+                status: b.status,
+                cabinClass: leg.cabinClass,
+                seats: leg.seats,
+                passengerCounts: b.passengerCounts,
+                passengers: b.passengers.map((p) => `${p.firstName} ${p.lastName}`),
+                amount: leg.amount,
+                currency: b.currency,
+                createdAt: b.createdAt,
+                confirmedAt: b.confirmedAt,
+                cancelledAt: b.cancelledAt,
+            };
+        });
+        return { flight: this.flightSummary(flight), ...paginate(items, total, query) };
+    }
+
+    /** FLT-29: passenger list of a flight as a CSV file (confirmed tickets only) */
+    async exportPassengersCsv(user: AuthUser, flightId: string) {
+        const { flight, items } = await this.passengerList(user, flightId);
+        const cell = (v: unknown) => {
+            const text = String(v ?? '');
+            // quote every cell; double any quotes; stop spreadsheet formula injection
+            return `"${(/^[=+\-@]/.test(text) ? `'${text}` : text).replace(/"/g, '""')}"`;
+        };
+        const header = [
+            'Booking reference',
+            'Ticket number',
+            'Name',
+            'Type',
+            'Date of birth',
+            'Cabin',
+            'Extra bags',
+        ];
+        const rows = items.map((p) => [
+            p.bookingReference,
+            p.ticketNumber,
+            p.name,
+            p.type,
+            p.dateOfBirth,
+            p.cabinClass,
+            p.extraBags,
+        ]);
+        return {
+            fileName: `passengers-${flight.flightNumber}-${flight.departureUtc.slice(0, 10)}.csv`,
+            csv: [header, ...rows].map((r) => r.map(cell).join(',')).join('\r\n') + '\r\n',
         };
     }
 
@@ -451,6 +580,11 @@ export class FlightBookingsService implements OnModuleInit {
         if (booking.status !== BookingStatus.PENDING) {
             throw new BadRequestException(`This booking is ${booking.status} and cannot be paid`);
         }
+        if (booking.passengers.length === 0) {
+            throw new BadRequestException(
+                'Add passenger details first (POST /api/flight-bookings), then pay',
+            );
+        }
         return {
             bookingType: 'flight' as const,
             bookingId: booking._id.toString(),
@@ -486,6 +620,7 @@ export class FlightBookingsService implements OnModuleInit {
                     _id: booking._id,
                     status: BookingStatus.PENDING,
                     holdExpiresAt: { $gt: new Date() },
+                    'passengers.0': { $exists: true },
                 },
                 {
                     $set: {
@@ -500,7 +635,7 @@ export class FlightBookingsService implements OnModuleInit {
             .exec();
         if (!confirmed) {
             throw new ConflictException(
-                'The seat hold expired or the booking was cancelled before payment',
+                'The seat hold expired, the booking was cancelled, or passenger details are missing',
             );
         }
         // TODO (Member 6): notify the user that the booking is confirmed.
@@ -593,28 +728,29 @@ export class FlightBookingsService implements OnModuleInit {
         return age;
     }
 
+    private typesFromCounts(c: { adults: number; children: number; infants: number }) {
+        return [
+            ...Array<PassengerType>(c.adults).fill(PassengerType.ADULT),
+            ...Array<PassengerType>(c.children).fill(PassengerType.CHILD),
+            ...Array<PassengerType>(c.infants).fill(PassengerType.INFANT),
+        ];
+    }
+
     private async priceLeg(
         flight: FlightDocument,
         cabinId: Types.ObjectId,
-        passengers: Passenger[],
+        types: PassengerType[],
+        bags: number,
         seats: number,
     ): Promise<BookingLeg> {
         const cabin = flight.cabins.id(cabinId)!;
-        const fareAmount = round2(passengers.reduce((sum, p) => sum + cabin.prices[p.type], 0));
-
-        const bags = passengers.reduce((sum, p) => sum + p.extraBags, 0);
-        let baggageAmount = 0;
-        if (bags > 0) {
-            const { baggagePolicy } = await this.airlines.getPolicies(flight.airline.toString());
-            if (baggagePolicy.currency !== flight.currency) {
-                throw new BadRequestException(
-                    `Extra bags on flight ${flight.flightNumber} are priced in ${baggagePolicy.currency}, ` +
-                    `not ${flight.currency}, so they cannot be added online`,
-                );
-            }
-            baggageAmount = round2(bags * baggagePolicy.extraBagFee);
-        }
-
+        const fareAmount = round2(types.reduce((sum, t) => sum + cabin.prices[t], 0));
+        const baggageAmount = await this.baggageFee(
+            flight.airline,
+            flight.flightNumber,
+            flight.currency,
+            bags,
+        );
         return {
             flight: flight._id,
             airline: flight.airline,
@@ -629,6 +765,43 @@ export class FlightBookingsService implements OnModuleInit {
             baggageAmount,
             amount: round2(fareAmount + baggageAmount),
             ticketNumbers: [],
+        };
+    }
+
+    /** Price of `bags` extra checked bags on one flight, from the airline's baggage policy (FLT-21) */
+    private async baggageFee(
+        airlineId: Types.ObjectId,
+        flightNumber: string,
+        currency: string,
+        bags: number,
+    ): Promise<number> {
+        if (bags === 0) return 0;
+        const { baggagePolicy } = await this.airlines.getPolicies(airlineId.toString());
+        if (baggagePolicy.currency !== currency) {
+            throw new BadRequestException(
+                `Extra bags on flight ${flightNumber} are priced in ${baggagePolicy.currency}, ` +
+                `not ${currency}, so they cannot be added online`,
+            );
+        }
+        return round2(bags * baggagePolicy.extraBagFee);
+    }
+
+    /** Loads a flight and checks the user is its airline's moderator (or an admin) */
+    private async getManagedFlight(user: AuthUser, flightId: string): Promise<FlightDocument> {
+        if (!Types.ObjectId.isValid(flightId)) throw new BadRequestException('Invalid flight id');
+        const flight = await this.flightModel.findById(flightId).exec();
+        if (!flight) throw new NotFoundException('Flight not found');
+        assertManagesProvider(user, ProviderType.AIRLINE, flight.airline);
+        return flight;
+    }
+
+    private flightSummary(flight: FlightDocument) {
+        return {
+            id: flight._id.toString(),
+            flightNumber: flight.flightNumber,
+            route: `${flight.origin}-${flight.destination}`,
+            departureUtc: flight.departureTime.toISOString(),
+            status: flight.status,
         };
     }
 
@@ -693,6 +866,8 @@ export class FlightBookingsService implements OnModuleInit {
             holdSecondsLeft: pending
                 ? Math.max(0, Math.floor((b.holdExpiresAt.getTime() - Date.now()) / 1000))
                 : undefined,
+            detailsComplete: b.passengers.length > 0,
+            passengerCounts: b.passengerCounts,
             totalAmount: b.totalAmount,
             currency: b.currency,
             flights: b.legs.map((l) => ({

@@ -6,7 +6,7 @@ export type FlightBookingDocument = HydratedDocument<FlightBooking>;
 
 /**
  * The shared booking life cycle (same words as hotel bookings, so Payments can treat both alike):
- *   pending   -> seats are held, waiting for payment
+ *   pending   -> seats are held (step 1), passenger details added (step 2), waiting for payment
  *   confirmed -> paid; tickets issued
  *   cancelled -> cancelled by the user, or the airline cancelled the flight
  *   expired   -> not paid in time; seats went back on sale
@@ -52,6 +52,20 @@ export class Passenger {
     extraBags: number;
 }
 const PassengerSchema = SchemaFactory.createForClass(Passenger);
+
+/** How many of each passenger type the seats were held for (FLT-22) */
+@Schema({ _id: false })
+export class PassengerCounts {
+    @Prop({ required: true, min: 1 })
+    adults: number;
+
+    @Prop({ required: true, min: 0 })
+    children: number;
+
+    @Prop({ required: true, min: 0 })
+    infants: number;
+}
+const PassengerCountsSchema = SchemaFactory.createForClass(PassengerCounts);
 
 /**
  * One flight of the trip: the outbound, and for a round trip also the return.
@@ -120,8 +134,15 @@ export class FlightBooking {
     @Prop({ type: [BookingLegSchema], required: true })
     legs: BookingLeg[];
 
-    @Prop({ type: [PassengerSchema], required: true })
+    @Prop({ type: PassengerCountsSchema, required: true })
+    passengerCounts: PassengerCounts;
+
+    /** Empty after the hold (FLT-22); filled in by POST /api/flight-bookings (FLT-19, FLT-21) */
+    @Prop({ type: [PassengerSchema], default: [] })
     passengers: Passenger[];
+
+    @Prop()
+    detailsAddedAt?: Date;
 
     @Prop({ required: true, min: 0 })
     totalAmount: number;
