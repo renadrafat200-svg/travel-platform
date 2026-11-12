@@ -298,7 +298,101 @@ export class FlightBookingsService {
         };
     }
 
-    // [PR4] moderator views go here
+    /** Airline moderator: everyone with a confirmed ticket on one of their flights (used by the export) */
+    async passengerList(user: AuthUser, flightId: string) {
+        const flight = await this.getManagedFlight(user, flightId);
+
+        const bookings = await this.bookingModel
+            .find({ 'legs.flight': flight._id, status: BookingStatus.CONFIRMED })
+            .sort({ confirmedAt: 1 })
+            .exec();
+
+        const items = bookings.flatMap((b) => {
+            const leg = b.legs.find((l) => l.flight.equals(flight._id))!;
+            return b.passengers.map((p, i) => ({
+                bookingReference: b.reference,
+                name: `${p.firstName} ${p.lastName}`,
+                type: p.type,
+                dateOfBirth: p.dateOfBirth,
+                cabinClass: leg.cabinClass,
+                extraBags: p.extraBags,
+                ticketNumber: leg.ticketNumbers[i],
+            }));
+        });
+        return {
+            flight: this.flightSummary(flight),
+            totalPassengers: items.length,
+            seatedPassengers: items.filter((p) => p.type !== PassengerType.INFANT).length,
+            infants: items.filter((p) => p.type === PassengerType.INFANT).length,
+            items,
+        };
+    }
+
+    /** FLT-29: airline moderator sees the bookings on one of their flights */
+    async bookingsForFlight(user: AuthUser, flightId: string, query: FlightBookingsQueryDto) {
+        const flight = await this.getManagedFlight(user, flightId);
+        const filter: QueryFilter<FlightBooking> = { 'legs.flight': flight._id };
+        if (query.status) filter.status = query.status;
+        const [docs, total] = await Promise.all([
+            this.bookingModel
+                .find(filter)
+                .sort({ createdAt: -1 })
+                .skip(query.skip)
+                .limit(query.limit)
+                .exec(),
+            this.bookingModel.countDocuments(filter).exec(),
+        ]);
+        const items = docs.map((b) => {
+            const leg = b.legs.find((l) => l.flight.equals(flight._id))!;
+            return {
+                id: b._id.toString(),
+                reference: b.reference,
+                status: b.status,
+                cabinClass: leg.cabinClass,
+                seats: leg.seats,
+                passengerCounts: b.passengerCounts,
+                passengers: b.passengers.map((p) => `${p.firstName} ${p.lastName}`),
+                amount: leg.amount,
+                currency: b.currency,
+                createdAt: b.createdAt,
+                confirmedAt: b.confirmedAt,
+                cancelledAt: b.cancelledAt,
+            };
+        });
+        return { flight: this.flightSummary(flight), ...paginate(items, total, query) };
+    }
+
+    /** FLT-29: passenger list of a flight as a CSV file (confirmed tickets only) */
+    async exportPassengersCsv(user: AuthUser, flightId: string) {
+        const { flight, items } = await this.passengerList(user, flightId);
+        const cell = (v: unknown) => {
+            const text = String(v ?? '');
+            // quote every cell; double any quotes; stop spreadsheet formula injection
+            return `"${(/^[=+\-@]/.test(text) ? `'${text}` : text).replace(/"/g, '""')}"`;
+        };
+        const header = [
+            'Booking reference',
+            'Ticket number',
+            'Name',
+            'Type',
+            'Date of birth',
+            'Cabin',
+            'Extra bags',
+        ];
+        const rows = items.map((p) => [
+            p.bookingReference,
+            p.ticketNumber,
+            p.name,
+            p.type,
+            p.dateOfBirth,
+            p.cabinClass,
+            p.extraBags,
+        ]);
+        return {
+            fileName: `passengers-${flight.flightNumber}-${flight.departureUtc.slice(0, 10)}.csv`,
+            csv: [header, ...rows].map((r) => r.map(cell).join(',')).join('\r\n') + '\r\n',
+        };
+    }
 
     // =====================================================================================
     // Cancelling
@@ -691,7 +785,24 @@ export class FlightBookingsService {
         return round2(bags * baggagePolicy.extraBagFee);
     }
 
-    // [PR4] moderator helpers go here
+    /** Loads a flight and checks the user is its airline's moderator (or an admin) */
+    private async getManagedFlight(user: AuthUser, flightId: string): Promise<FlightDocument> {
+        if (!Types.ObjectId.isValid(flightId)) throw new BadRequestException('Invalid flight id');
+        const flight = await this.flightModel.findById(flightId).exec();
+        if (!flight) throw new NotFoundException('Flight not found');
+        assertManagesProvider(user, ProviderType.AIRLINE, flight.airline);
+        return flight;
+    }
+
+    private flightSummary(flight: FlightDocument) {
+        return {
+            id: flight._id.toString(),
+            flightNumber: flight.flightNumber,
+            route: `${flight.origin}-${flight.destination}`,
+            departureUtc: flight.departureTime.toISOString(),
+            status: flight.status,
+        };
+    }
 
     private async getOwned(user: AuthUser, id: string): Promise<FlightBookingDocument> {
         if (!Types.ObjectId.isValid(id)) throw new BadRequestException('Invalid booking id');

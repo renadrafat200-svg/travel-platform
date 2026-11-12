@@ -45,3 +45,50 @@ with passenger counts, cabin class, price filters, sorting and
 pagination. I tested creating and searching a flight in Swagger and
 committed it.
 ================================================
+================================================
+=========================
+@'
+================================================
+Date: 2026-11-12
+Student: Nadeen Yasser
+Tool: Claude
+Related Requirement: FLT-19, FLT-21, FLT-22, FLT-23, FLT-25, FLT-26, FLT-29
+
+Prompt:
+Design and implement the flight booking module (Member 3) for our
+NestJS + MongoDB backend: concurrency-safe temporary seat holds that
+expire and release inventory, passenger and baggage details, booking
+history, cancellation with refunds based on the airline's policy,
+e-tickets, and a passenger list for airline moderators. Explain how to
+integrate each file into the existing project.
+
+How the output was used:
+Used the generated module as the basis for the flight booking feature.
+Seats are reserved with a single atomic MongoDB update per cabin, so
+concurrent requests cannot overbook; a background job releases expired
+holds. Reviewed the code, integrated it into the project, ran it
+against our Atlas database, and verified concurrency with a test in
+which 20 simultaneous requests competed for 5 seats (exactly 5
+succeeded).
+================================================
+Date: 2026-11-13
+Student: Nadeen Yasser
+Tool: Claude
+Related Requirement: FLT-19, FLT-21, FLT-22, FLT-23, FLT-25, FLT-26, FLT-29
+
+Prompt	:Review the flight booking module against the API table in sections
+8.3 and 8.4 of the project description, align every endpoint with it,
+and organise the work into separate pull requests following the
+project's Git workflow.
+
+How the output was used:
+Restructured booking into the two steps defined in the specification
+(POST /api/flight-bookings/hold, then POST /api/flight-bookings with
+passenger and baggage details), aligned the list and cancellation
+endpoints, and added GET /api/flights/:id/bookings and the passenger
+CSV export (FLT-29). The review also found and fixed a validation bug
+that returned 500 instead of 400. Submitted the work as four pull
+requests (seat holds, cancellation, e-ticket, moderator views) and
+re-ran the concurrency test against Atlas (PASS).
+================================================
+'@ | Add-Content -Path AI_PROMPTS.txt -Encoding ascii

@@ -101,4 +101,42 @@ export class FlightBookingsController {
     }
 }
 
-// [PR4] moderator controller goes here
+/** Airline moderator views (section 8.3, FLT-29), under /api/flights next to the flight */
+@ApiTags('Flight bookings')
+@ApiCookieAuth('access_token')
+@Controller('flights')
+export class FlightPassengersController {
+    constructor(private readonly bookings: FlightBookingsService) { }
+
+    @Get(':id/bookings')
+    @Roles(Role.AIRLINE_MODERATOR, Role.ADMIN)
+    @ApiOperation({ summary: 'Bookings on one of my airline’s flights (FLT-29)' })
+    @ApiOkResponse({ description: 'Paginated bookings, filter by status' })
+    @ApiForbiddenResponse({ description: 'Not your airline' })
+    @ApiNotFoundResponse({ description: 'Flight not found' })
+    bookingsForFlight(
+        @CurrentUser() user: AuthUser,
+        @Param('id') id: string,
+        @Query() query: FlightBookingsQueryDto,
+    ) {
+        return this.bookings.bookingsForFlight(user, id, query);
+    }
+
+    @Get(':id/passengers/export')
+    @Roles(Role.AIRLINE_MODERATOR, Role.ADMIN)
+    @ApiOperation({ summary: 'Download the passenger list as CSV (FLT-29)' })
+    @ApiProduces('text/csv')
+    @ApiOkResponse({ description: 'CSV file of passengers with confirmed tickets' })
+    @ApiForbiddenResponse({ description: 'Not your airline' })
+    @ApiNotFoundResponse({ description: 'Flight not found' })
+    async exportPassengers(
+        @CurrentUser() user: AuthUser,
+        @Param('id') id: string,
+        @Res() res: Response,
+    ) {
+        const { fileName, csv } = await this.bookings.exportPassengersCsv(user, id);
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.send(csv);
+    }
+}

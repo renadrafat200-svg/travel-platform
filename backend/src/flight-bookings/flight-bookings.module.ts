@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AirlinesModule } from '../airlines/airlines.module';
 import { FlightsModule } from '../flights/flights.module';
-import { FlightBookingsController } from './flight-bookings.controller';
+import { FlightBookingsController, FlightPassengersController } from './flight-bookings.controller';
 import { FlightBookingsService } from './flight-bookings.service';
 import { HoldExpiryJob } from './hold-expiry.job';
 import { FlightBooking, FlightBookingSchema } from './schemas/flight-booking.schema';
@@ -19,7 +19,7 @@ import { SeatInventoryService } from './seat-inventory.service';
         FlightsModule, // gives the Flight model and FlightsService
         AirlinesModule,
     ],
-    controllers: [FlightBookingsController],
+    controllers: [FlightBookingsController, FlightPassengersController],
     providers: [FlightBookingsService, SeatInventoryService, HoldExpiryJob],
     exports: [FlightBookingsService, MongooseModule],
 })
