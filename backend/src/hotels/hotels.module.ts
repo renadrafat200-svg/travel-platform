@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { HotelSearchService } from './hotel-search.service';
 import { HotelsController } from './hotels.controller';
 import { HotelsService } from './hotels.service';
 import { RoomInventoryService } from './room-inventory.service';
@@ -13,7 +14,7 @@ import { Room, RoomSchema } from './schemas/room.schema';
 
 /**
  * Hotels (Member 4): hotel profiles, photos and policies, rooms, bookable ranges, blocked dates,
- * and the room calendar (HTL-01 to HTL-10).
+ * the room calendar, available rooms and hotel search (HTL-01 to HTL-15).
  * Exports HotelsService (Member 1: exists(), setActive(); Member 5: setRating()) and
  * RoomInventoryService, which hotel bookings use to take and free room nights.
  */
@@ -28,7 +29,18 @@ import { Room, RoomSchema } from './schemas/room.schema';
     ]),
   ],
   controllers: [HotelsController, RoomsController],
-  providers: [HotelsService, RoomsService, RoomInventoryService],
-  exports: [HotelsService, RoomsService, RoomInventoryService, MongooseModule],
+  providers: [
+    HotelsService,
+    RoomsService,
+    RoomInventoryService,
+    HotelSearchService,
+  ],
+  exports: [
+    HotelsService,
+    RoomsService,
+    RoomInventoryService,
+    HotelSearchService,
+    MongooseModule,
+  ],
 })
 export class HotelsModule {}
