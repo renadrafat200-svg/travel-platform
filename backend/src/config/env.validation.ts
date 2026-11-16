@@ -25,7 +25,7 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
-  JWT_EXPIRES_IN?: string;
+  JWT_EXPIRES_IN?: string; // no longer used: access tokens last 15 minutes (auth.constants.ts)
 
   @IsOptional()
   @IsString()

@@ -18,6 +18,17 @@ Software Project I (Winter 2026), GIU. Backend: NestJS + MongoDB Atlas. Frontend
 The admin account is created automatically on the first start from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env`.
 Admins cannot register through the API.
 
+## Login and sessions (how auth works)
+
+- `POST /api/auth/register` needs `acceptTerms: true`. Passwords: at least 8 characters with at least one letter and one digit.
+- `POST /api/auth/login` sets two httpOnly cookies: `access_token` (15 minutes) and `refresh_token`.
+  In Swagger, just log in once; the cookies are sent automatically.
+- `POST /api/auth/refresh` gives a new access token. A session with no authenticated request for **30 minutes** ends.
+- `POST /api/auth/logout` clears the cookies and revokes the session on the server.
+- Moderators created by an admin, and accounts reset by an admin, get `mustChangePassword: true`.
+  Until they call `PATCH /api/auth/change-password`, every other logged-in route answers 403.
+- `DELETE /api/users/me` is refused (409) while the user has upcoming confirmed bookings.
+
 ## Using auth in your module (read this before writing a controller)
 
 Every route **requires login by default**. You do not need to add any guard yourself.

@@ -42,6 +42,7 @@ export class AdminAccountsService {
       role,
       providerType: dto.providerType,
       providerId: dto.providerId,
+      mustChangePassword: true, // ACC-13: the moderator must replace the admin-set password at first login
     });
 
     await this.audit.log(admin, {
@@ -135,7 +136,8 @@ export class AdminAccountsService {
   async resetPassword(admin: AuthUser, id: string) {
     const target = await this.getManageableAccount(admin, id);
     const temporaryPassword = this.generateTemporaryPassword();
-    await this.users.setPassword(target._id.toString(), temporaryPassword);
+    // ACC-07a: logs the account out everywhere; it must set a new password at next login
+    await this.users.setPassword(target._id.toString(), temporaryPassword, { mustChangePassword: true });
     await this.audit.log(admin, {
       action: 'account.reset_password',
       targetType: 'user',

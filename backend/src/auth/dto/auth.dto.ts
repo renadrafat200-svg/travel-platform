@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsNotEmpty, IsString, Length, Matches } from 'class-validator';
+import { Equals, IsEmail, IsNotEmpty, IsString, Length, Matches } from 'class-validator';
 import { PASSWORD_REGEX, PASSWORD_RULE_MESSAGE } from '../../config/auth.constants';
 
 const toLowerTrim = ({ value }: { value: unknown }) =>
@@ -12,10 +12,14 @@ export class RegisterDto {
   @IsEmail({}, { message: 'email must be a valid email address' })
   email: string;
 
-  @ApiProperty({ example: 'Travel2026', description: PASSWORD_RULE_MESSAGE })
+  @ApiProperty({ example: 'travel2026', description: PASSWORD_RULE_MESSAGE })
   @IsString()
   @Matches(PASSWORD_REGEX, { message: PASSWORD_RULE_MESSAGE })
   password: string;
+
+  @ApiProperty({ example: true, description: 'ACC-01: the terms-and-privacy consent checkbox; must be true' })
+  @Equals(true, { message: 'You must accept the terms and privacy policy' })
+  acceptTerms: boolean;
 
   @ApiProperty({ example: 'Malak' })
   @IsString()
@@ -46,7 +50,7 @@ export class ChangePasswordDto {
   @IsNotEmpty()
   currentPassword: string;
 
-  @ApiProperty({ example: 'NewTravel2026', description: PASSWORD_RULE_MESSAGE })
+  @ApiProperty({ example: 'newtravel2026', description: PASSWORD_RULE_MESSAGE })
   @IsString()
   @Matches(PASSWORD_REGEX, { message: PASSWORD_RULE_MESSAGE })
   newPassword: string;

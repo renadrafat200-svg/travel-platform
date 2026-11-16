@@ -65,6 +65,14 @@ export class User {
   @Prop()
   passwordChangedAt?: Date;
 
+  /** ACC-07a / ACC-13: set by an admin; the user must choose a new password before doing anything else */
+  @Prop({ default: false })
+  mustChangePassword: boolean;
+
+  /** ACC-01: when the user accepted the terms and privacy policy at registration */
+  @Prop()
+  termsAcceptedAt?: Date;
+
   @Prop()
   lastLoginAt?: Date;
 

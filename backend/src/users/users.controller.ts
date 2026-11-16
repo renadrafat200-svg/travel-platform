@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Patch, Res } from '@nestjs/common';
 import {
+  ApiConflictResponse,
   ApiCookieAuth,
   ApiForbiddenResponse,
   ApiNoContentResponse,
@@ -11,7 +12,7 @@ import {
 import type { Response } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
-import { clearAuthCookie } from '../auth/auth-cookie';
+import { clearAuthCookies } from '../auth/auth-cookie';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UsersService } from './users.service';
 
@@ -43,11 +44,13 @@ export class UsersController {
   @HttpCode(204)
   @ApiOperation({
     summary: 'Delete (deactivate) my account (ACC-12)',
-    description: 'The account can no longer log in. Existing bookings stay in the system.',
+    description:
+      'The account can no longer log in and all its sessions end. Blocked (409) while the user has upcoming Confirmed bookings.',
   })
   @ApiNoContentResponse({ description: 'Account deactivated and logged out' })
+  @ApiConflictResponse({ description: 'Has upcoming confirmed bookings' })
   async deleteMe(@CurrentUser() user: AuthUser, @Res({ passthrough: true }) res: Response) {
     await this.users.deactivate(user.id);
-    clearAuthCookie(res);
+    clearAuthCookies(res);
   }
 }

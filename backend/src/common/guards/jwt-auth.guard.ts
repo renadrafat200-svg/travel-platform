@@ -8,18 +8,20 @@ import {
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
-import { AUTH_COOKIE_NAME } from '../../config/auth.constants';
+import { AUTH_COOKIE_NAME, SESSION_IDLE_MINUTES } from '../../config/auth.constants';
+import { SessionsService } from '../../users/sessions.service';
 import { UsersService } from '../../users/users.service';
+import { ALLOW_PASSWORD_CHANGE_PENDING_KEY } from '../decorators/allow-password-change-pending.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { AccountStatus } from '../enums/role.enum';
 import { AuthUser, JwtPayload } from '../interfaces/auth-user.interface';
 
 /**
  * Registered globally in AuthModule, so it runs on EVERY route.
- * - Reads the JWT from the httpOnly cookie (never from localStorage)
- * - Rejects expired or tampered tokens (session expiry)
- * - Loads the user from the database each time, so a suspension or a password change
- *   takes effect immediately, not only when the token expires
+ * - Reads the access token from the httpOnly cookie (never from localStorage) (ACC-19)
+ * - Checks the server-side session: revoked by logout, or idle for 30 minutes = logged out (ACC-06)
+ * - Loads the user each time, so a suspension or password change takes effect immediately
+ * - Blocks everything except changing the password while a temporary password is in use (ACC-07a, ACC-13)
  * Routes marked @Public() skip the login requirement, but still get req.user if a valid cookie is sent.
  */
 @Injectable()
@@ -28,13 +30,13 @@ export class JwtAuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly jwt: JwtService,
     private readonly users: UsersService,
+    private readonly sessions: SessionsService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const targets = [context.getHandler(), context.getClass()];
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, targets);
+    const allowPending = this.reflector.getAllAndOverride<boolean>(ALLOW_PASSWORD_CHANGE_PENDING_KEY, targets);
     const req = context.switchToHttp().getRequest<Request & { user?: AuthUser }>();
     const token = (req.cookies as Record<string, string> | undefined)?.[AUTH_COOKIE_NAME];
 
@@ -43,11 +45,17 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('You must be logged in');
     }
 
+    let user: AuthUser;
     try {
-      req.user = await this.resolveUser(token);
+      user = await this.resolveUser(token);
     } catch (err) {
       if (isPublic) return true; // a bad cookie should not block a public page
       throw err;
+    }
+    req.user = user;
+
+    if (user.mustChangePassword && !isPublic && !allowPending) {
+      throw new ForbiddenException('You must change your temporary password before continuing');
     }
     return true;
   }
@@ -60,6 +68,15 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('Session expired or invalid, please log in again');
     }
 
+    const check = await this.sessions.checkById(payload.sid);
+    if (!check.ok) {
+      throw new UnauthorizedException(
+        check.reason === 'idle'
+          ? `Your session ended after ${SESSION_IDLE_MINUTES} minutes of inactivity, please log in again`
+          : 'You are logged out, please log in again',
+      );
+    }
+
     const user = await this.users.findById(payload.sub);
     if (!user) throw new UnauthorizedException('Account no longer exists');
 
@@ -70,13 +87,7 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('This account has been deactivated');
     }
 
-    // Tokens issued before the last password change are no longer valid
-    if (user.passwordChangedAt && payload.iat) {
-      const changedAtSeconds = Math.floor(user.passwordChangedAt.getTime() / 1000);
-      if (payload.iat < changedAtSeconds) {
-        throw new UnauthorizedException('Password was changed, please log in again');
-      }
-    }
+    await this.sessions.touch(check.session);
 
     return {
       id: user._id.toString(),
@@ -84,6 +95,8 @@ export class JwtAuthGuard implements CanActivate {
       role: user.role,
       providerType: user.providerType,
       providerId: user.providerId?.toString(),
+      sessionId: payload.sid,
+      mustChangePassword: user.mustChangePassword ?? false,
     };
   }
 }
