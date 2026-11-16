@@ -91,4 +91,29 @@ that returned 500 instead of 400. Submitted the work as four pull
 requests (seat holds, cancellation, e-ticket, moderator views) and
 re-ran the concurrency test against Atlas (PASS).
 ================================================
-'@ | Add-Content -Path AI_PROMPTS.txt -Encoding ascii
+'@ | Add-Content -Path AI_PROMPTS.txt -Encoding ascii================================================
+Date: 2026-11-17
+Student: Hamza
+Tool: Claude
+Related Requirement: HTL-01 to HTL-23, GEN-08 (hotel photos), PAY-04
+
+Prompt:
+Study our team's planning chat (I am Member 4) and the leader's
+Member 4 task list from the requirements workbook, then build Member 4:
+hotels, rooms, bookable date ranges, blocks, room calendar, policies,
+hotel search, available rooms, multi-room booking with a 10-minute
+hold that is concurrency-safe, my reservations, refund preview and
+cancel, moderator reservations, and the Completed status.
+
+How the output was used:
+Claude wrote the hotels and hotel-bookings modules following the
+flight booking module's patterns and the team's naming agreements
+("hotelbookings" with user, status, checkIn/checkOut as dates, USD,
+getForPayment/confirm/markRefunded). Every taken room night is a
+document with a unique (room, date) index, and a reservation is saved
+with all its nights in one MongoDB transaction, so overlapping or
+partial reservations are impossible. It was tested end to end (131
+checks, including 20 parallel requests for the same room: exactly 1
+succeeded). I reviewed the code, ran it against our Atlas database
+and ran scripts/check-room-race.js before opening the pull requests.
+================================================
