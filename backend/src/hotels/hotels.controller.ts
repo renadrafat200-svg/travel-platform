@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  NotFoundException,
   Param,
   Patch,
   Post,
@@ -28,7 +27,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
-import { createReadStream, promises as fs } from 'fs';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -118,14 +116,9 @@ export class HotelsController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const file = await this.hotels.photoFile(fileName);
-    const exists = await fs.stat(file.path).then(
-      () => true,
-      () => false,
-    );
-    if (!exists) throw new NotFoundException('Photo not found');
     res.setHeader('Content-Type', file.contentType);
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    return new StreamableFile(createReadStream(file.path));
+    return new StreamableFile(file.data);
   }
 
   @Get(':id')

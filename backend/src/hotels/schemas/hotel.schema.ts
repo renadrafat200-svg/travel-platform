@@ -37,12 +37,12 @@ export class HotelPolicies {
 }
 const HotelPoliciesSchema = SchemaFactory.createForClass(HotelPolicies);
 
-/** GEN-08: an uploaded photo (JPG or PNG, max 5 MB), stored on the server and served by URL */
+/** GEN-08: an uploaded photo (JPG or PNG, max 5 MB). The image itself is in the hotelphotofiles collection. */
 @Schema({ _id: true })
 export class HotelPhoto {
   _id: Types.ObjectId;
 
-  /** File name inside backend/uploads/hotels */
+  /** Name of the image in the hotelphotofiles collection */
   @Prop({ required: true })
   fileName: string;
 

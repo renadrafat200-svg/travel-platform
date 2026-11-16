@@ -6,9 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'crypto';
-import { promises as fs } from 'fs';
 import { Connection, Model, QueryFilter, Types } from 'mongoose';
-import * as path from 'path';
 import { AuditService } from '../audit/audit.service';
 import { paginate } from '../common/dto/pagination-query.dto';
 import { ProviderType, Role } from '../common/enums/role.enum';
@@ -29,6 +27,7 @@ import {
   MAX_HOTEL_PHOTOS,
 } from './hotel.constants';
 import { Hotel, HotelDocument, HotelPolicies } from './schemas/hotel.schema';
+import { HotelPhotoFile } from './schemas/hotel-photo-file.schema';
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -42,8 +41,6 @@ export interface UploadedImage {
 
 /** GEN-08 */
 export const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
-/** Uploaded hotel photos are stored here (backend/uploads is in .gitignore) */
-export const HOTEL_PHOTO_DIR = path.join(process.cwd(), 'uploads', 'hotels');
 
 /** Detects the real file type from the first bytes, so a renamed .exe cannot pass as a .jpg */
 function imageType(buf: Buffer): 'image/jpeg' | 'image/png' | null {
@@ -60,6 +57,8 @@ export class HotelsService {
 
   constructor(
     @InjectModel(Hotel.name) private readonly hotelModel: Model<Hotel>,
+    @InjectModel(HotelPhotoFile.name)
+    private readonly photoFileModel: Model<HotelPhotoFile>,
     @InjectConnection() private readonly connection: Connection,
     private readonly reference: ReferenceDataService,
     private readonly audit: AuditService,
@@ -197,18 +196,32 @@ export class HotelsService {
       return { file: f, type };
     });
 
-    await fs.mkdir(HOTEL_PHOTO_DIR, { recursive: true });
-    for (const { file, type } of checked) {
-      const fileName = `${hotel._id.toString()}-${randomUUID()}.${type === 'image/png' ? 'png' : 'jpg'}`;
-      await fs.writeFile(path.join(HOTEL_PHOTO_DIR, fileName), file.buffer);
+    // The image bytes go into the shared database, so every teammate's backend can serve them
+    const newFiles = checked.map(({ file, type }) => ({
+      fileName: `${hotel._id.toString()}-${randomUUID()}.${type === 'image/png' ? 'png' : 'jpg'}`,
+      hotel: hotel._id,
+      contentType: type,
+      size: file.size,
+      data: file.buffer,
+    }));
+    await this.photoFileModel.insertMany(newFiles);
+    for (const f of newFiles) {
       hotel.photos.push({
-        fileName,
-        url: `/api/hotels/photos/${fileName}`,
-        contentType: type,
-        size: file.size,
+        fileName: f.fileName,
+        url: `/api/hotels/photos/${f.fileName}`,
+        contentType: f.contentType,
+        size: f.size,
       } as never);
     }
-    await hotel.save();
+    try {
+      await hotel.save();
+    } catch (err) {
+      // Don't leave image files behind that no hotel points to
+      await this.photoFileModel
+        .deleteMany({ fileName: { $in: newFiles.map((f) => f.fileName) } })
+        .exec();
+      throw err;
+    }
     await this.audit.log(user, {
       action: 'hotel.photos.add',
       targetType: 'hotel',
@@ -224,9 +237,7 @@ export class HotelsService {
     if (!photo) throw new NotFoundException('Photo not found');
     hotel.photos = hotel.photos.filter((p) => p._id.toString() !== photoId);
     await hotel.save();
-    await fs
-      .unlink(path.join(HOTEL_PHOTO_DIR, photo.fileName))
-      .catch(() => undefined);
+    await this.photoFileModel.deleteOne({ fileName: photo.fileName }).exec();
     await this.audit.log(user, {
       action: 'hotel.photos.remove',
       targetType: 'hotel',
@@ -235,17 +246,16 @@ export class HotelsService {
     return this.toView(hotel).photos;
   }
 
-  /** Path of a stored photo, or 404. Only names this module created are accepted. */
+  /** The stored image (bytes + type), or 404. Only names this module created are accepted. */
   async photoFile(fileName: string) {
     if (!/^[a-f0-9]{24}-[a-f0-9-]{36}\.(jpg|png)$/.test(fileName)) {
       throw new NotFoundException('Photo not found');
     }
     const hotel = await this.hotelModel.exists({ 'photos.fileName': fileName });
     if (!hotel) throw new NotFoundException('Photo not found');
-    return {
-      path: path.join(HOTEL_PHOTO_DIR, fileName),
-      contentType: fileName.endsWith('.png') ? 'image/png' : 'image/jpeg',
-    };
+    const file = await this.photoFileModel.findOne({ fileName }).exec();
+    if (!file) throw new NotFoundException('Photo not found');
+    return { data: file.data, contentType: file.contentType };
   }
 
   /** HTL-02: newest visible reviews (Member 5 stores them in "reviews" with hotel + isHidden) */
