@@ -81,7 +81,42 @@ backend/src/
   config/auth.constants.ts                  password rules, lockout limits (check against the Excel sheet)
   auth/                                     register, login, logout, me, change-password
   users/                                    User schema, /api/users/me, admin seeding
+  hotels/                                   hotels, policies, rooms, blocked dates, availability, hotel search
+  hotel-bookings/                           multi-room bookings with holds, cancellation + refunds, reservations
 ```
+
+## Hotels and hotel booking (Member 4)
+
+Dates: `checkIn` is the first night and `checkOut` is the day you leave, both hotel local dates
+(`2026-12-01` -> `2026-12-04` = 3 nights). Date ranges (bookable ranges, blocks) work the same way:
+`from` = first night, `to` = first night NOT included. All prices are USD (`config/platform.constants.ts`).
+Rules (10-minute hold, default tiers) are in `hotels/hotel.constants.ts`.
+
+**Moderator setup for a bookable room:** `POST /api/hotels/:id/rooms`, then
+`POST /api/hotels/:id/rooms/:roomId/availability` with `{ from, to }`. A room without a bookable range
+never shows up in search.
+
+**Using it from your module**
+
+| Who | Call | What it does |
+| --- | --- | --- |
+| Payments (Member 6) | `hotelBookings.getForPayment(user, id)` | `{ bookingType: 'hotel', bookingId, user, amount, currency: 'USD', holdExpiresAt }` |
+| Payments (Member 6) | `hotelBookings.confirm(id, paymentIntentId)` | Webhook only. Pending -> Confirmed. 409 if the 10-minute hold expired (then refund). Safe to retry. |
+| Payments (Member 6) | `hotelBookings.markRefunded(id, refundId, failed?)` | After the Stripe refund: `refundStatus` pending -> refunded (or failed) |
+| Payments (Member 6) | `GET /api/hotel-bookings/:id/refund-preview` | Refund on the full total from the hotel's tiers (HTL-21) |
+| Reviews (Member 5) | `hotelBookings.getCompletedStay(user, bookingId)` | `{ hotelId }` only for the user's own **completed** reservation; 403 / 400 otherwise |
+| Reviews (Member 5) | `hotels.setRating(hotelId, average, count)` | Updates the rating used by search and the details page |
+| Reviews (Member 5) | collection `reviews` with fields `hotel`, `rating`, `comment`, `isHidden` | The hotel details page shows the 5 newest visible reviews |
+| Admin (Member 1) | `hotels.exists(id)`, `hotels.setActive(id, false / true)` | ACC-13 provider check, ACC-15 deactivate / reactivate |
+| Admin (Member 1) | `hotelBookings.listAll({ page, limit, skip, status, hotelId, userId, from, to })` | ACC-17 all hotel reservations |
+
+Import `HotelsModule` / `HotelBookingsModule` to inject `HotelsService` / `HotelBookingsService`.
+
+**Why double booking is impossible (HTL-18):** every taken night of a room (a confirmed reservation,
+an unexpired hold or a block) is one `RoomNight` document with a unique index on `(room, date)`.
+A reservation is saved together with all its nights in one MongoDB transaction, so if any room is
+taken on any night the whole request is rolled back and nothing is held. Prove it on Atlas with
+`node scripts/check-room-race.js` (20 parallel requests, exactly 1 succeeds).
 
 ## Git workflow
 
