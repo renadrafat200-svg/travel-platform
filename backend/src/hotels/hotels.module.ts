@@ -7,6 +7,10 @@ import { RoomInventoryService } from './room-inventory.service';
 import { RoomsController } from './rooms.controller';
 import { RoomsService } from './rooms.service';
 import { Hotel, HotelSchema } from './schemas/hotel.schema';
+import {
+  HotelPhotoFile,
+  HotelPhotoFileSchema,
+} from './schemas/hotel-photo-file.schema';
 import { RoomBlock, RoomBlockSchema } from './schemas/room-block.schema';
 import { RoomNight, RoomNightSchema } from './schemas/room-night.schema';
 import { RoomRange, RoomRangeSchema } from './schemas/room-range.schema';
@@ -22,6 +26,7 @@ import { Room, RoomSchema } from './schemas/room.schema';
   imports: [
     MongooseModule.forFeature([
       { name: Hotel.name, schema: HotelSchema },
+      { name: HotelPhotoFile.name, schema: HotelPhotoFileSchema },
       { name: Room.name, schema: RoomSchema },
       { name: RoomNight.name, schema: RoomNightSchema },
       { name: RoomBlock.name, schema: RoomBlockSchema },
