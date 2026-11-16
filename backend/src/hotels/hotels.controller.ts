@@ -36,11 +36,14 @@ import { Role } from '../common/enums/role.enum';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import {
   CreateHotelDto,
+  HotelDetailsQueryDto,
   HotelPoliciesDto,
   HotelQueryDto,
+  HotelSearchDto,
   UpdateHotelDto,
 } from './dto/hotel.dto';
 import { MAX_HOTEL_PHOTOS } from './hotel.constants';
+import { HotelSearchService } from './hotel-search.service';
 import { HotelsService, MAX_PHOTO_BYTES } from './hotels.service';
 import type { UploadedImage } from './hotels.service';
 
@@ -48,7 +51,10 @@ import type { UploadedImage } from './hotels.service';
 @ApiCookieAuth('access_token')
 @Controller('hotels')
 export class HotelsController {
-  constructor(private readonly hotels: HotelsService) {}
+  constructor(
+    private readonly hotels: HotelsService,
+    private readonly searchService: HotelSearchService,
+  ) {}
 
   @Post()
   @Roles(Role.ADMIN)
@@ -74,7 +80,25 @@ export class HotelsController {
     return this.hotels.findAll(query, user);
   }
 
-  // 'mine' and 'photos/...' must stay above ':id' so they are not read as ids
+  // 'search', 'mine' and 'photos/...' must stay above ':id' so they are not read as ids
+  @Get('search')
+  @Public()
+  @ApiOperation({
+    summary:
+      'Search hotels by city or country, dates, guests and rooms (public) (HTL-11, HTL-12)',
+  })
+  @ApiOkResponse({
+    description:
+      'Hotels that can fit the group, with the price per night of the cheapest qualifying room',
+  })
+  @ApiBadRequestResponse({
+    description:
+      'No city/country, check-in in the past, check-out not after check-in, minPrice > maxPrice',
+  })
+  search(@Query() query: HotelSearchDto) {
+    return this.searchService.search(query);
+  }
+
   @Get('mine')
   @Roles(Role.HOTEL_MODERATOR)
   @ApiOperation({ summary: 'The hotel I manage (hotel moderator)' })
@@ -108,18 +132,18 @@ export class HotelsController {
   @Public()
   @ApiOperation({
     summary:
-      'Hotel details: policies, rating and latest reviews (public) (HTL-02)',
+      'Hotel details: policies, rating, latest reviews, and the free rooms when checkIn and checkOut are given (public) (HTL-02)',
   })
   @ApiOkResponse({
     description: 'Hotel profile; availableRooms only when dates are given',
   })
   @ApiNotFoundResponse({ description: 'Not found or deactivated' })
-  async findOne(@Param('id') id: string, @CurrentUser() user?: AuthUser) {
-    const hotel = await this.hotels.getVisible(id, user);
-    return {
-      ...this.hotels.toView(hotel),
-      reviews: await this.hotels.latestReviews(hotel._id),
-    };
+  findOne(
+    @Param('id') id: string,
+    @Query() query: HotelDetailsQueryDto,
+    @CurrentUser() user?: AuthUser,
+  ) {
+    return this.searchService.details(id, query, user);
   }
 
   @Get(':id/policies')

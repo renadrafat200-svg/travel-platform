@@ -24,6 +24,7 @@ import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import { AvailableRoomsQueryDto } from './dto/hotel.dto';
 import {
   CreateRoomBlockDto,
   CreateRoomDto,
@@ -32,6 +33,7 @@ import {
   RoomListQueryDto,
   UpdateRoomDto,
 } from './dto/room.dto';
+import { HotelSearchService } from './hotel-search.service';
 import { RoomsService } from './rooms.service';
 
 /** Rooms, bookable ranges, blocked dates and the room calendar, nested under their hotel */
@@ -39,7 +41,10 @@ import { RoomsService } from './rooms.service';
 @ApiCookieAuth('access_token')
 @Controller('hotels/:hotelId/rooms')
 export class RoomsController {
-  constructor(private readonly rooms: RoomsService) {}
+  constructor(
+    private readonly rooms: RoomsService,
+    private readonly searchService: HotelSearchService,
+  ) {}
 
   @Post()
   @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
@@ -77,6 +82,29 @@ export class RoomsController {
     @CurrentUser() user?: AuthUser,
   ) {
     return this.rooms.findAll(hotelId, query, user);
+  }
+
+  // Must stay above ':roomId' so "available" is not read as a room id
+  @Get('available')
+  @Public()
+  @ApiOperation({
+    summary:
+      'Rooms free for the given dates, with the total stay price (public) (HTL-15)',
+  })
+  @ApiOkResponse({
+    description:
+      'Type, beds, max occupancy, price per night and total price of each free room',
+  })
+  @ApiBadRequestResponse({
+    description: 'Check-in in the past, or check-out not after check-in',
+  })
+  @ApiNotFoundResponse({ description: 'Hotel not found or deactivated' })
+  available(
+    @Param('hotelId') hotelId: string,
+    @Query() query: AvailableRoomsQueryDto,
+    @CurrentUser() user?: AuthUser,
+  ) {
+    return this.searchService.availableRooms(hotelId, query, user);
   }
 
   @Get(':roomId')
