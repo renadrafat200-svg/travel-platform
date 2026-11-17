@@ -117,3 +117,60 @@ checks, including 20 parallel requests for the same room: exactly 1
 succeeded). I reviewed the code, ran it against our Atlas database
 and ran scripts/check-room-race.js before opening the pull requests.
 ================================================
+================================================
+Date: 2026-11-05
+Student: Judy Elrayess
+Tool: Claude
+Related Requirement: GEN-07, ACC-13, ACC-14, ACC-15, ACC-16, ACC-07a
+
+Prompt:
+I'm Member 1. Help me build the audit log and the admin account
+management: create moderators for an airline or hotel, list and filter
+accounts, suspend and reactivate accounts, and admin password reset.
+
+How the output was used:
+Claude wrote the audit module (shared AuditService.log() that every
+module calls, plus GET /api/admin/audit-logs with filters) and the
+admin accounts endpoints. Suspended users are blocked on their next
+request, admins cannot act on themselves or other admins, and the
+password reset returns a one-time temporary password. I tested each
+endpoint in Swagger and opened PRs #3 and #4.
+================================================
+Date: 2026-11-08
+Student: Judy Elrayess
+Tool: Claude
+Related Requirement: GEN-09, GEN-10
+
+Prompt:
+Build user content reports and admin moderation: users report a post,
+comment, review or itinerary, and the admin can dismiss the report,
+hide the content, or delete it.
+
+How the output was used:
+Claude wrote the reports module (POST /api/reports, GET and PATCH
+/api/admin/reports, DELETE /api/admin/content/:type/:id) with a shared
+content-moderation service and an isHidden rule for teammates' models.
+I added it to app.module, checked it compiled and returned 404 for
+unknown content, and opened PR #5.
+================================================
+Date: 2026-11-17
+Student: Judy Elrayess
+Tool: Claude
+Related Requirement: ACC-13, ACC-15, ACC-17
+
+Prompt:
+What's left for me as Member 1? Check that the provider exists when
+creating a moderator, add admin deactivate/reactivate for airlines and
+hotels, add the admin view of all bookings, and remove the pre-filled
+Swagger examples from the filter DTOs.
+
+How the output was used:
+Claude added the provider check (404 for an unknown airline/hotel),
+PATCH /api/admin/airlines|hotels/:id/deactivate and /reactivate with
+audit logging, and GET /api/admin/bookings with type, status, user,
+provider and date filters. It added setActive() to the airlines
+service and listAll() to the flight-bookings service for this. I
+tested it in Swagger (created a test hotel and airline, deactivated
+and reactivated them, checked search, audit log and 403 for normal
+users) and opened the PR.
+================================================
