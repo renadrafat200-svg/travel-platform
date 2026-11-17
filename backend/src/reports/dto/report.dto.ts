@@ -27,7 +27,7 @@ export class CreateReportDto {
 
 /** GET /api/admin/reports filters */
 export class ReportQueryDto extends PaginationQueryDto {
-  @ApiPropertyOptional({ enum: ReportStatus, example: ReportStatus.OPEN })
+  @ApiPropertyOptional({ enum: ReportStatus })
   @IsOptional()
   @IsEnum(ReportStatus)
   status?: ReportStatus;
