@@ -14,6 +14,7 @@ import { HotelsModule } from './hotels/hotels.module';
 import { validateEnv } from './config/env.validation';
 import { ReferenceDataModule } from './reference-data/reference-data.module';
 import { ReportsModule } from './reports/reports.module';
+import { ReviewsModule } from './reviews/reviews.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -47,6 +48,7 @@ import { UsersModule } from './users/users.module';
     FlightBookingsModule,
     HotelsModule,
     HotelBookingsModule,
+    ReviewsModule,
   ],
   controllers: [AppController],
 })
