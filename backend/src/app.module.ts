@@ -7,6 +7,7 @@ import { AirlinesModule } from './airlines/airlines.module';
 import { AppController } from './app.controller';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
+import { BlogModule } from './blog/blog.module';
 import { FlightBookingsModule } from './flight-bookings/flight-bookings.module';
 import { FlightsModule } from './flights/flights.module';
 import { HotelBookingsModule } from './hotel-bookings/hotel-bookings.module';
@@ -49,6 +50,7 @@ import { UsersModule } from './users/users.module';
     HotelsModule,
     HotelBookingsModule,
     ReviewsModule,
+    BlogModule,
   ],
   controllers: [AppController],
 })

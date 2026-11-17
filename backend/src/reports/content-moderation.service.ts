@@ -35,6 +35,7 @@ export class ContentModerationService {
   /** Content stays in the database but every public query must skip it */
   async hide(type: ReportTargetType, id: string | Types.ObjectId) {
     const hotel = await this.reviewedHotel(type, id);
+    const post = await this.commentedPost(type, id);
     const res = await this.collection(type).updateOne(
       { _id: new Types.ObjectId(id.toString()) },
       { $set: { isHidden: true, hiddenAt: new Date() } },
@@ -42,16 +43,49 @@ export class ContentModerationService {
     if (res.matchedCount === 0)
       throw new NotFoundException(`That ${type} no longer exists`);
     if (hotel) await this.recalculateHotelRating(hotel);
+    if (post) await this.recountPostComments(post);
   }
 
   async remove(type: ReportTargetType, id: string | Types.ObjectId) {
+    const oid = new Types.ObjectId(id.toString());
     const hotel = await this.reviewedHotel(type, id);
-    const res = await this.collection(type).deleteOne({
-      _id: new Types.ObjectId(id.toString()),
-    });
+    const post = await this.commentedPost(type, id);
+    const res = await this.collection(type).deleteOne({ _id: oid });
     if (res.deletedCount === 0)
       throw new NotFoundException(`That ${type} no longer exists`);
     if (hotel) await this.recalculateHotelRating(hotel);
+    if (post) await this.recountPostComments(post);
+    // A deleted blog post takes its comments, likes and image files with it (BLG-04)
+    if (type === ReportTargetType.POST) {
+      await Promise.all([
+        this.connection.collection('comments').deleteMany({ post: oid }),
+        this.connection.collection('postlikes').deleteMany({ post: oid }),
+        this.connection.collection('postimagefiles').deleteMany({ post: oid }),
+      ]);
+    }
+  }
+
+  /** For a comment: the post it belongs to (so its comment count can be updated) */
+  private async commentedPost(
+    type: ReportTargetType,
+    id: string | Types.ObjectId,
+  ): Promise<Types.ObjectId | undefined> {
+    if (type !== ReportTargetType.COMMENT) return undefined;
+    const comment = await this.collection(type).findOne(
+      { _id: new Types.ObjectId(id.toString()) },
+      { projection: { post: 1 } },
+    );
+    return comment?.post as Types.ObjectId | undefined;
+  }
+
+  /** BLG-09: commentCount counts visible comments only (search orders by likes + comments) */
+  private async recountPostComments(postId: Types.ObjectId) {
+    const count = await this.connection
+      .collection('comments')
+      .countDocuments({ post: postId, isHidden: { $ne: true } });
+    await this.connection
+      .collection('posts')
+      .updateOne({ _id: postId }, { $set: { commentCount: count } });
   }
 
   /** For a review: the hotel it belongs to (so its average rating can be updated) */
