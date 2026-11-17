@@ -15,6 +15,8 @@ import { User, UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
 import { AccountQueryDto } from './dto/account-query.dto';
 import { CreateModeratorDto } from './dto/create-moderator.dto';
+import { AirlinesService } from '../airlines/airlines.service';
+import { HotelsService } from '../hotels/hotels.service';
 
 @Injectable()
 export class AdminAccountsService {
@@ -22,6 +24,8 @@ export class AdminAccountsService {
     @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly users: UsersService,
     private readonly audit: AuditService,
+    private readonly airlines: AirlinesService,
+    private readonly hotels: HotelsService,
   ) {}
 
   /** ACC-13: create a moderator assigned to exactly one airline or hotel */
@@ -29,8 +33,16 @@ export class AdminAccountsService {
     if (await this.users.emailExists(dto.email)) {
       throw new ConflictException('An account with this email already exists');
     }
-    // TODO: once the Airlines (Member 2) and Hotels (Member 4) modules are merged,
-    // check that the airline/hotel with dto.providerId really exists and return 404 if not.
+    // ACC-13: the airline or hotel must exist before a moderator is assigned to it
+    const providerExists =
+      dto.providerType === ProviderType.AIRLINE
+        ? await this.airlines.exists(dto.providerId)
+        : await this.hotels.exists(dto.providerId);
+    if (!providerExists) {
+      throw new NotFoundException(
+        `No ${dto.providerType} with id ${dto.providerId}. Create the ${dto.providerType} first.`,
+      );
+    }
 
     const role =
       dto.providerType === ProviderType.AIRLINE ? Role.AIRLINE_MODERATOR : Role.HOTEL_MODERATOR;

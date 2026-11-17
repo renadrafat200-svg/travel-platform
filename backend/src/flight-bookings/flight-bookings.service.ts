@@ -9,7 +9,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { randomInt } from 'crypto';
 import { Model, QueryFilter, Types } from 'mongoose';
 import { AirlinesService } from '../airlines/airlines.service';
-import { paginate } from '../common/dto/pagination-query.dto';
+import { PaginationQueryDto, paginate } from '../common/dto/pagination-query.dto';
 import { ProviderType, Role } from '../common/enums/role.enum';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { assertManagesProvider, assertOwnerOrAdmin } from '../common/utils/ownership';
@@ -567,6 +567,43 @@ export class FlightBookingsService {
             count++;
         }
         return count;
+    }
+
+    /** Member 1 (ACC-17): every flight booking, filterable by status, airline, user and departure date range */
+    async listAll(
+        query: PaginationQueryDto & {
+            status?: BookingStatus;
+            airlineId?: string;
+            userId?: string;
+            from?: Date;
+            to?: Date;
+        },
+    ) {
+        await this.expireOverdue();
+        const filter: QueryFilter<FlightBooking> = {};
+        if (query.status) filter.status = query.status;
+        if (query.airlineId) filter['legs.airline'] = new Types.ObjectId(query.airlineId);
+        if (query.userId) filter.user = new Types.ObjectId(query.userId);
+        if (query.from || query.to) {
+            filter['legs.0.departureTime'] = {
+                ...(query.from && { $gte: query.from }),
+                ...(query.to && { $lte: query.to }),
+            };
+        }
+        const [docs, total] = await Promise.all([
+            this.bookingModel
+                .find(filter)
+                .sort({ createdAt: -1 })
+                .skip(query.skip)
+                .limit(query.limit)
+                .exec(),
+            this.bookingModel.countDocuments(filter).exec(),
+        ]);
+        return paginate(
+            docs.map((d) => ({ ...this.toView(d), bookingType: 'flight' as const, user: d.user.toString() })),
+            total,
+            query,
+        );
     }
 
     // =====================================================================================

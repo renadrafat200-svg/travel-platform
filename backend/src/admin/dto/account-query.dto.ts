@@ -15,7 +15,7 @@ export class AccountQueryDto extends PaginationQueryDto {
   @IsEnum(AccountStatus)
   status?: AccountStatus;
 
-  @ApiPropertyOptional({ description: 'Search by email, first name or last name', example: 'malak' })
+  @ApiPropertyOptional({ description: 'Search by email, first name or last name',  })
   @IsOptional()
   @IsString()
   @MaxLength(100)

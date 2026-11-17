@@ -212,6 +212,19 @@ export class AirlinesService {
     return !!(await this.airlineModel.exists({ _id: id, isActive: true }));
   }
 
+  /**
+   * Member 1 (ACC-15): deactivate or reactivate an airline. Deactivated airlines vanish from
+   * lists and flight search and cannot be booked; existing bookings stay valid.
+   * (The admin module checks the current state and writes the audit log.)
+   */
+  async setActive(id: string, active: boolean) {
+    const airline = await this.getById(id);
+    airline.isActive = active;
+    airline.deactivatedAt = active ? undefined : new Date();
+    await airline.save();
+    return this.toView(airline);
+  }
+
   /** Flight search: ids of all active airlines, to hide flights of deactivated ones */
   async activeIds(): Promise<Types.ObjectId[]> {
     const docs = await this.airlineModel.find({ isActive: true }, { _id: 1 }).lean().exec();

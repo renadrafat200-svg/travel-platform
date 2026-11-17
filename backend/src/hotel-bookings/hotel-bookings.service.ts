@@ -646,7 +646,7 @@ export class HotelBookingsService {
       this.bookingModel.countDocuments(filter).exec(),
     ]);
     return paginate(
-      docs.map((d) => this.toView(d)),
+      docs.map((d) => ({ ...this.toView(d), user: d.user.toString(), createdAt: d.createdAt })),
       total,
       query,
     );
