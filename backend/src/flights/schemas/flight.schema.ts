@@ -10,8 +10,13 @@ export enum CabinClass {
   FIRST = 'first',
 }
 
+/**
+ * Scheduled -> Departed (automatically once the departure time has passed)
+ * Scheduled -> Cancelled (the airline cancels it, FLT-06)
+ */
 export enum FlightStatus {
   SCHEDULED = 'scheduled',
+  DEPARTED = 'departed',
   CANCELLED = 'cancelled',
 }
 
@@ -99,6 +104,10 @@ export class Flight {
 
   @Prop()
   cancelledAt?: Date;
+
+  /** When the system marked the flight Departed */
+  @Prop()
+  departedAt?: Date;
 
   @Prop({ trim: true, maxlength: 500 })
   cancellationReason?: string;

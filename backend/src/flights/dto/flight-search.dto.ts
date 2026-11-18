@@ -35,7 +35,6 @@ export class FlightSearchDto {
   departureDate: string;
 
   @ApiPropertyOptional({
-    example: '2026-12-08',
     description: 'Give a return date for a round trip; leave empty for one-way',
   })
   @IsOptional()
@@ -73,13 +72,13 @@ export class FlightSearchDto {
   @IsEnum(CabinClass)
   cabinClass: CabinClass = CabinClass.ECONOMY;
 
-  @ApiPropertyOptional({ example: 200, description: 'Minimum total price for all passengers' })
+  @ApiPropertyOptional({ description: 'Minimum total price for all passengers' })
   @IsOptional()
   @IsNumber()
   @Min(0)
   minPrice?: number;
 
-  @ApiPropertyOptional({ example: 1500, description: 'Maximum total price for all passengers' })
+  @ApiPropertyOptional({ description: 'Maximum total price for all passengers' })
   @IsOptional()
   @IsNumber()
   @Min(0)

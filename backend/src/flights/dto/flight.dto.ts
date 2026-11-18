@@ -168,7 +168,7 @@ export class MyFlightsQueryDto extends PaginationQueryDto {
   @IsEnum(FlightStatus)
   status?: FlightStatus;
 
-  @ApiPropertyOptional({ example: 'MS777' })
+  @ApiPropertyOptional({ description: 'e.g. MS777' })
   @IsOptional()
   @Transform(upper)
   @IsString()

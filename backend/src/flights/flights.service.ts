@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, QueryFilter, Types } from 'mongoose';
 import { AirlinesService } from '../airlines/airlines.service';
@@ -35,6 +36,7 @@ type FlightCancelledListener = (flightId: Types.ObjectId, reason?: string) => Pr
 export class FlightsService {
     /** Other modules (flight bookings) register here to react when a flight is cancelled */
     private readonly cancelledListeners: FlightCancelledListener[] = [];
+    private readonly logger = new Logger(FlightsService.name);
   constructor(
     @InjectModel(Flight.name) private readonly flightModel: Model<Flight>,
     private readonly airlines: AirlinesService,
@@ -96,16 +98,42 @@ export class FlightsService {
 
   /** FLT-17: flight details. Flights of a deactivated airline are hidden from the public. */
   async findOne(id: string, user?: AuthUser) {
+    await this.markDepartedFlights();
     const flight = await this.getById(id);
     const airline = await this.airlines.getBasic(flight.airline);
     if (!airline || (!airline.isActive && !this.canManage(user, flight.airline))) {
       throw new NotFoundException('Flight not found');
     }
-    return this.fullView(flight, airline);
+    // FLT-17: the details page also shows the airline's baggage and cancellation policies
+    const policies = await this.airlines.getPolicies(airline.id, user);
+    return {
+      ...(await this.fullView(flight, airline)),
+      baggagePolicy: policies.baggagePolicy,
+      cancellationPolicy: policies.cancellationPolicy,
+    };
+  }
+
+  /**
+   * Scheduled flights whose departure time has passed become Departed.
+   * Runs every minute, and also right before flights are read so the status is never stale.
+   * The status condition makes it safe if two runs overlap.
+   */
+  @Cron(CronExpression.EVERY_MINUTE)
+  async markDepartedFlights() {
+    const now = new Date();
+    const res = await this.flightModel
+      .updateMany(
+        { status: FlightStatus.SCHEDULED, departureTime: { $lte: now } },
+        { $set: { status: FlightStatus.DEPARTED, departedAt: now } },
+      )
+      .exec();
+    if (res.modifiedCount > 0) this.logger.log(`${res.modifiedCount} flight(s) marked Departed`);
+    return res.modifiedCount;
   }
 
   /** The logged-in moderator's flights (admins can pass airlineId) */
   async findMine(user: AuthUser, query: MyFlightsQueryDto) {
+    await this.markDepartedFlights();
     const airlineId = this.resolveAirlineId(user, query.airlineId);
     const filter: QueryFilter<Flight> = { airline: new Types.ObjectId(airlineId) };
     if (query.status) filter.status = query.status;
@@ -290,6 +318,7 @@ export class FlightsService {
       currency: f.currency,
       status: f.status,
       cancellationReason: f.cancellationReason,
+      departedAt: f.departedAt,
       cabins: f.cabins.map((c) => ({
         id: c._id.toString(),
         cabinClass: c.cabinClass,
@@ -337,7 +366,8 @@ export class FlightsService {
     if (flight.status === FlightStatus.CANCELLED) {
       throw new BadRequestException('This flight is cancelled and can no longer be changed');
     }
-    if (flight.departureTime <= new Date()) {
+    // Only Scheduled flights can be edited or cancelled (FLT-05, FLT-06)
+    if (flight.status === FlightStatus.DEPARTED || flight.departureTime <= new Date()) {
       throw new BadRequestException('This flight has already departed');
     }
   }

@@ -204,14 +204,13 @@ export class UpdateAirlineDto extends PartialType(
 export class AirlineQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     description: 'Search by name or IATA code',
-    example: 'egypt',
   })
   @IsOptional()
   @IsString()
   @MaxLength(100)
   search?: string;
 
-  @ApiPropertyOptional({ example: 'EG' })
+  @ApiPropertyOptional({ description: 'Country code, e.g. EG' })
   @IsOptional()
   @Transform(upper)
   @Matches(/^[A-Z]{2}$/)
