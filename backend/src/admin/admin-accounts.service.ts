@@ -8,6 +8,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { randomBytes } from 'crypto';
 import { Model, QueryFilter, Types } from 'mongoose';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/schemas/notification.schema';
 import { paginate } from '../common/dto/pagination-query.dto';
 import { AccountStatus, ProviderType, Role } from '../common/enums/role.enum';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
@@ -26,6 +28,7 @@ export class AdminAccountsService {
     private readonly audit: AuditService,
     private readonly airlines: AirlinesService,
     private readonly hotels: HotelsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** ACC-13: create a moderator assigned to exactly one airline or hotel */
@@ -115,7 +118,12 @@ export class AdminAccountsService {
       targetId: target._id,
       details: { reason, email: target.email },
     });
-    // TODO: when Notifications (Member 6) is merged, notify the user here.
+    await this.notifications.notify(
+      target._id,
+      NotificationType.ACCOUNT_SUSPENDED,
+      'Account suspended',
+      `Your account was suspended by an administrator.${reason ? ` Reason: ${reason}` : ''}`,
+    );
     return { message: 'Account suspended', id: target._id.toString(), status: AccountStatus.SUSPENDED };
   }
 
@@ -137,6 +145,12 @@ export class AdminAccountsService {
       targetId: target._id,
       details: { reason, email: target.email },
     });
+    await this.notifications.notify(
+      target._id,
+      NotificationType.ACCOUNT_REACTIVATED,
+      'Account reactivated',
+      'Your account was reactivated. You can use the platform again.',
+    );
     return { message: 'Account reactivated', id: target._id.toString(), status: AccountStatus.ACTIVE };
   }
 

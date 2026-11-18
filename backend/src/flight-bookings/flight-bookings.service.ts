@@ -14,6 +14,8 @@ import { ProviderType, Role } from '../common/enums/role.enum';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { assertManagesProvider, assertOwnerOrAdmin } from '../common/utils/ownership';
 import { FlightsService } from '../flights/flights.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/schemas/notification.schema';
 import { Flight, FlightDocument, FlightStatus } from '../flights/schemas/flight.schema';
 import {
     CancelFlightBookingDto,
@@ -61,6 +63,7 @@ export class FlightBookingsService {
         private readonly seats: SeatInventoryService,
         private readonly flights: FlightsService,
         private readonly airlines: AirlinesService,
+        private readonly notifications: NotificationsService,
     ) { }
 
     /** Nest calls this at startup. When an airline cancels a flight (FLT-06), its bookings are cancelled here too */
@@ -476,8 +479,17 @@ export class FlightBookingsService {
             .exec();
         if (!updated) throw new ConflictException('This booking changed meanwhile; please reload it');
         await this.releaseSeats(updated);
-        // TODO (Member 6): issue the Stripe refund for refundAmount, then call markRefunded(id).
-        // TODO (Member 6): notify the user that the booking was cancelled.
+        // PAY-03: the Stripe refund is issued by PaymentsService (Member 6), which picks up refundStatus "pending".
+        await this.notifications.notify(
+            updated.user,
+            NotificationType.BOOKING_CANCELLED,
+            'Flight booking cancelled',
+            `Your flight booking ${updated.reference} was cancelled.` +
+                (refundAmount > 0
+                    ? ` A refund of ${refundAmount} ${updated.currency} is being processed.`
+                    : " No refund is due under the airline's policy."),
+            { bookingType: 'flight', bookingId: updated._id.toString(), reference: updated.reference },
+        );
         return this.toView(updated);
     }
 
@@ -516,7 +528,15 @@ export class FlightBookingsService {
             if (!updated) continue; // someone else changed it first; they already handled the seats
             await this.releaseSeats(updated);
             cancelled++;
-            // TODO (Member 6): refund paid bookings in full and notify each user.
+            // PAY-03: paid bookings are refunded in full by PaymentsService (refundStatus "pending").
+            await this.notifications.notify(
+                updated.user,
+                NotificationType.FLIGHT_CANCELLED,
+                'Flight cancelled by the airline',
+                `The airline cancelled a flight in your booking ${updated.reference}.` +
+                    (paid ? ` You will get a full refund of ${updated.totalAmount} ${updated.currency}.` : ''),
+                { bookingType: 'flight', bookingId: updated._id.toString(), reference: updated.reference },
+            );
         }
         if (cancelled)
             this.logger.log(
@@ -674,7 +694,13 @@ export class FlightBookingsService {
                 'The seat hold expired, the booking was cancelled, or passenger details are missing',
             );
         }
-        // TODO (Member 6): notify the user that the booking is confirmed.
+        await this.notifications.notify(
+            confirmed.user,
+            NotificationType.BOOKING_CONFIRMED,
+            'Flight booking confirmed',
+            `Your payment was received and booking ${confirmed.reference} is confirmed. Your e-tickets are ready.`,
+            { bookingType: 'flight', bookingId: confirmed._id.toString(), reference: confirmed.reference },
+        );
         return this.toView(confirmed);
     }
 

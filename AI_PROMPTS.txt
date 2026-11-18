@@ -174,3 +174,22 @@ tested it in Swagger (created a test hotel and airline, deactivated
 and reactivated them, checked search, audit log and 403 for normal
 users) and opened the PR.
 ================================================
+================================================
+Date: 2026-11-18
+Student: (Member 6 - write your name here)
+Tool: Claude
+Related Requirement: GEN-01
+
+Prompt:
+This is my project, I am Member 6 (payments, refunds and notifications).
+Do my part from the leader's task list, starting with GEN-01 notifications
+because everyone is waiting for it.
+
+How the output was used:
+Claude added a global NotificationsModule with notify()/notifyMany(),
+GET /api/notifications (paginated, unreadOnly), GET unread-count,
+PATCH :id/read and PATCH read-all, and filled the notify TODOs left by
+Members 1-4 (booking confirmed/cancelled, flight cancelled, schedule
+change, account suspend/reactivate, provider deactivation, reports).
+I checked it built, started the API and called every endpoint.
+================================================
