@@ -195,7 +195,7 @@ I checked it built, started the API and called every endpoint.
 ================================================
 ================================================
 Date: 2026-11-18
-Student: (Member 6 - write your name here)
+Student: Youssef Samy
 Tool: Claude
 Related Requirement: PAY-01, PAY-02, PAY-03, PAY-04
 
