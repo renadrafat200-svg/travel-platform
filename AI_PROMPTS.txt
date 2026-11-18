@@ -176,7 +176,7 @@ users) and opened the PR.
 ================================================
 ================================================
 Date: 2026-11-18
-Student: (Member 6 - write your name here)
+Student: Youssef Samy
 Tool: Claude
 Related Requirement: GEN-01
 
