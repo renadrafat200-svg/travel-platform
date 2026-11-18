@@ -20,7 +20,11 @@ export enum FlightStatus {
   CANCELLED = 'cancelled',
 }
 
-/** Ticket price per passenger type. Infants (under 2) sit on a lap and do not use a seat. */
+/**
+ * Ticket price per passenger type, worked out from the cabin price (FLT-12):
+ * adults (12+) and children (2-11) pay the cabin fare, infants (under 2) pay 10% and use no seat.
+ * Member 3's booking reads these.
+ */
 @Schema({ _id: false })
 export class CabinPrices {
   @Prop({ required: true, min: 0 })
@@ -59,8 +63,21 @@ export class Cabin {
   @Prop({ required: true, min: 0 })
   availableSeats: number;
 
+  /** FLT-04: the cabin fare in USD (> 0) */
+  @Prop({ required: true, min: 0.01 })
+  price: number;
+
+  /** Derived from price: adult = child = price, infant = 10% */
   @Prop({ type: CabinPricesSchema, required: true })
   prices: CabinPrices;
+
+  /** FLT-04: free baggage allowance per passenger in this cabin (number of bags) */
+  @Prop({ required: true, min: 0 })
+  freeBags: number;
+
+  /** FLT-04 / FLT-08: max weight of each bag, free or extra, in kg */
+  @Prop({ required: true, min: 1 })
+  maxBagWeightKg: number;
 }
 export const CabinSchema = SchemaFactory.createForClass(Cabin);
 
@@ -92,14 +109,19 @@ export class Flight {
   @Prop({ required: true, min: 1 })
   durationMinutes: number;
 
-  /** Currency of all cabin prices, one of the supported currencies */
-  @Prop({ required: true, uppercase: true })
+  /** Always the platform currency, USD (PAY-04) */
+  @Prop({ required: true, uppercase: true, default: 'USD' })
   currency: string;
 
   @Prop({ type: [CabinSchema], default: [] })
   cabins: Types.DocumentArray<Cabin>;
 
-  @Prop({ type: String, enum: FlightStatus, default: FlightStatus.SCHEDULED, index: true })
+  @Prop({
+    type: String,
+    enum: FlightStatus,
+    default: FlightStatus.SCHEDULED,
+    index: true,
+  })
   status: FlightStatus;
 
   @Prop()
@@ -119,5 +141,5 @@ export class Flight {
 export const FlightSchema = SchemaFactory.createForClass(Flight);
 // Main search index: route + date
 FlightSchema.index({ origin: 1, destination: 1, departureTime: 1, status: 1 });
-// The same flight number cannot depart twice at the same moment for one airline
-FlightSchema.index({ airline: 1, flightNumber: 1, departureTime: 1 }, { unique: true });
+// FLT-03: duplicate check (same airline, flight number and departure date) is done in FlightsService
+FlightSchema.index({ airline: 1, flightNumber: 1, departureTime: 1 });

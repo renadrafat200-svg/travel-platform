@@ -16,7 +16,12 @@ import { CabinClass } from '../schemas/flight.schema';
 const upper = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim().toUpperCase() : value;
 
-export const FLIGHT_SORT_FIELDS = ['price', 'departureTime', 'arrivalTime', 'duration'] as const;
+export const FLIGHT_SORT_FIELDS = [
+  'price',
+  'departureTime',
+  'arrivalTime',
+  'duration',
+] as const;
 
 /** GET /api/flights/search (FLT-11, FLT-12, FLT-15) */
 export class FlightSearchDto {
@@ -30,15 +35,22 @@ export class FlightSearchDto {
   @Matches(/^[A-Z]{3}$/, { message: 'to must be a 3-letter airport code' })
   to: string;
 
-  @ApiProperty({ example: '2026-12-01', description: 'Local date at the departure airport' })
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'departureDate must look like 2026-12-01' })
+  @ApiProperty({
+    example: '2026-12-01',
+    description: 'Local date at the departure airport',
+  })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'departureDate must look like 2026-12-01',
+  })
   departureDate: string;
 
   @ApiPropertyOptional({
     description: 'Give a return date for a round trip; leave empty for one-way',
   })
   @IsOptional()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'returnDate must look like 2026-12-08' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'returnDate must look like 2026-12-08',
+  })
   returnDate?: string;
 
   @ApiPropertyOptional({ default: 1, minimum: 1, maximum: 9 })
@@ -48,7 +60,12 @@ export class FlightSearchDto {
   @Max(9)
   adults: number = 1;
 
-  @ApiPropertyOptional({ default: 0, minimum: 0, maximum: 8, description: 'Ages 2-11, use a seat' })
+  @ApiPropertyOptional({
+    default: 0,
+    minimum: 0,
+    maximum: 8,
+    description: 'Ages 2-11, use a seat',
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -72,13 +89,17 @@ export class FlightSearchDto {
   @IsEnum(CabinClass)
   cabinClass: CabinClass = CabinClass.ECONOMY;
 
-  @ApiPropertyOptional({ description: 'Minimum total price for all passengers' })
+  @ApiPropertyOptional({
+    description: 'Minimum total price for all passengers',
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)
   minPrice?: number;
 
-  @ApiPropertyOptional({ description: 'Maximum total price for all passengers' })
+  @ApiPropertyOptional({
+    description: 'Maximum total price for all passengers',
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)

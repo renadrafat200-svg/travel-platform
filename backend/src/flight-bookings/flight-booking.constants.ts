@@ -16,8 +16,8 @@ export const BOOKING_CUTOFF_MINUTES = 120;
 /** Most passengers (including infants) in one booking */
 export const MAX_PASSENGERS = 9;
 
-/** Most extra checked bags one passenger can add per flight */
-export const MAX_EXTRA_BAGS = 3;
+/** Absolute upper limit per passenger; the real limit is each airline's maxExtraBags (FLT-08, FLT-19) */
+export const MAX_EXTRA_BAGS = 10;
 
 /** Most unpaid holds one user can have at the same time, so nobody can block a whole flight */
 export const MAX_ACTIVE_HOLDS_PER_USER = 3;

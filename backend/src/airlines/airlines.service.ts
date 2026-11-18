@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, QueryFilter, Types } from 'mongoose';
 import { AuditService } from '../audit/audit.service';
@@ -6,6 +12,7 @@ import { paginate } from '../common/dto/pagination-query.dto';
 import { ProviderType, Role } from '../common/enums/role.enum';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { assertManagesProvider } from '../common/utils/ownership';
+import { PLATFORM_CURRENCY } from '../config/platform.constants';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import {
   AirlineQueryDto,
@@ -14,25 +21,26 @@ import {
   CreateAirlineDto,
   UpdateAirlineDto,
 } from './dto/airline.dto';
-import { Airline, AirlineDocument, CancellationPolicy } from './schemas/airline.schema';
+import {
+  Airline,
+  AirlineDocument,
+  CancellationPolicy,
+} from './schemas/airline.schema';
 
 /** Used when the admin creates an airline without giving policies */
-const DEFAULT_BAGGAGE = {
-  cabin: { pieces: 1, maxWeightKg: 7 },
-  checked: { pieces: 1, maxWeightKg: 23 },
-  extraBagFee: 50,
-  currency: 'USD',
-};
+const DEFAULT_BAGGAGE = { extraBagPrice: 50, maxExtraBags: 3 };
 const DEFAULT_CANCELLATION = {
   rules: [
-    { hoursBeforeDeparture: 72, refundPercent: 100 },
-    { hoursBeforeDeparture: 24, refundPercent: 50 },
-    { hoursBeforeDeparture: 0, refundPercent: 0 },
+    { daysBeforeDeparture: 7, refundPercent: 100 },
+    { daysBeforeDeparture: 2, refundPercent: 50 },
+    { daysBeforeDeparture: 0, refundPercent: 0 },
   ],
 };
 
 @Injectable()
-export class AirlinesService {
+export class AirlinesService implements OnModuleInit {
+  private readonly logger = new Logger(AirlinesService.name);
+
   constructor(
     @InjectModel(Airline.name) private readonly airlineModel: Model<Airline>,
     private readonly reference: ReferenceDataService,
@@ -43,10 +51,11 @@ export class AirlinesService {
   async create(admin: AuthUser, dto: CreateAirlineDto) {
     await this.assertCountry(dto.country);
     if (await this.airlineModel.exists({ iataCode: dto.iataCode })) {
-      throw new BadRequestException(`An airline with IATA code ${dto.iataCode} already exists`);
+      throw new BadRequestException(
+        `An airline with IATA code ${dto.iataCode} already exists`,
+      );
     }
     const baggagePolicy = dto.baggagePolicy ?? DEFAULT_BAGGAGE;
-    await this.assertCurrency(baggagePolicy.currency);
     const cancellationPolicy = this.normaliseCancellation(
       dto.cancellationPolicy ?? DEFAULT_CANCELLATION,
     );
@@ -68,14 +77,19 @@ export class AirlinesService {
   /** Public list. Guests only see active airlines; admins can ask for deactivated ones too. */
   async findAll(query: AirlineQueryDto, user?: AuthUser) {
     const filter: QueryFilter<Airline> = {};
-    if (!(query.includeInactive && user?.role === Role.ADMIN)) filter.isActive = true;
+    if (!(query.includeInactive && user?.role === Role.ADMIN))
+      filter.isActive = true;
     if (query.country) filter.country = query.country;
     if (query.search) {
-      const re = new RegExp(query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const re = new RegExp(
+        query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+        'i',
+      );
       filter.$or = [{ name: re }, { iataCode: re }];
     }
     const sortable = ['name', 'iataCode', 'country', 'createdAt'];
-    const sortField = query.sortBy && sortable.includes(query.sortBy) ? query.sortBy : 'name';
+    const sortField =
+      query.sortBy && sortable.includes(query.sortBy) ? query.sortBy : 'name';
     const sortDir = query.order === 'desc' ? -1 : 1;
 
     const [docs, total] = await Promise.all([
@@ -142,7 +156,6 @@ export class AirlinesService {
   async updateBaggagePolicy(user: AuthUser, id: string, dto: BaggagePolicyDto) {
     const airline = await this.getById(id);
     assertManagesProvider(user, ProviderType.AIRLINE, airline._id);
-    await this.assertCurrency(dto.currency);
 
     airline.baggagePolicy = dto;
     await airline.save();
@@ -154,7 +167,11 @@ export class AirlinesService {
     return this.toView(airline).baggagePolicy;
   }
 
-  async updateCancellationPolicy(user: AuthUser, id: string, dto: CancellationPolicyDto) {
+  async updateCancellationPolicy(
+    user: AuthUser,
+    id: string,
+    dto: CancellationPolicyDto,
+  ) {
     const airline = await this.getById(id);
     assertManagesProvider(user, ProviderType.AIRLINE, airline._id);
 
@@ -172,14 +189,17 @@ export class AirlinesService {
 
   /** Member 1: check the airline exists before assigning a moderator to it */
   async exists(id: string): Promise<boolean> {
-    return Types.ObjectId.isValid(id) && !!(await this.airlineModel.exists({ _id: id }));
+    return (
+      Types.ObjectId.isValid(id) &&
+      !!(await this.airlineModel.exists({ _id: id }))
+    );
   }
 
   /** Flights: basic info about one airline (null if it does not exist) */
   async getBasic(id: string | Types.ObjectId) {
     if (!Types.ObjectId.isValid(id.toString())) return null;
     const a = await this.airlineModel
-      .findById(id, { name: 1, iataCode: 1, isActive: 1, 'baggagePolicy.currency': 1 })
+      .findById(id, { name: 1, iataCode: 1, isActive: 1 })
       .lean()
       .exec();
     return a
@@ -188,9 +208,24 @@ export class AirlinesService {
           name: a.name,
           iataCode: a.iataCode,
           isActive: a.isActive,
-          currency: a.baggagePolicy.currency,
         }
       : null;
+  }
+
+  /**
+   * Member 3 (FLT-19): extra-bag price and the most extra bags one passenger may add.
+   * 404 if the airline does not exist.
+   */
+  async baggageRules(id: string | Types.ObjectId) {
+    const a = await this.airlineModel
+      .findById(id, { baggagePolicy: 1 })
+      .lean()
+      .exec();
+    if (!a) throw new NotFoundException('Airline not found');
+    return {
+      extraBagPrice: a.baggagePolicy.extraBagPrice,
+      maxExtraBags: a.baggagePolicy.maxExtraBags,
+    };
   }
 
   /** Flight search: name and code of several airlines at once, keyed by id */
@@ -227,39 +262,119 @@ export class AirlinesService {
 
   /** Flight search: ids of all active airlines, to hide flights of deactivated ones */
   async activeIds(): Promise<Types.ObjectId[]> {
-    const docs = await this.airlineModel.find({ isActive: true }, { _id: 1 }).lean().exec();
+    const docs = await this.airlineModel
+      .find({ isActive: true }, { _id: 1 })
+      .lean()
+      .exec();
     return docs.map((d) => d._id);
   }
 
   /**
-   * Member 6 (refunds): percentage refunded when cancelling `hoursBeforeDeparture` hours before the flight.
-   * Picks the first rule whose threshold has not passed; 0 if none applies.
+   * FLT-09 / FLT-26 / Member 6: refund percentage when cancelling `hoursBeforeDeparture` hours
+   * before the flight. Converted to WHOLE days remaining (e.g. 47 hours = 1 day), then the tier with
+   * the highest threshold not exceeding the days remaining is used; 0% if no tier applies.
    */
   async refundPercent(
     airlineId: string | Types.ObjectId,
     hoursBeforeDeparture: number,
+  ): Promise<number> {
+    return this.refundPercentForDays(
+      airlineId,
+      Math.floor(hoursBeforeDeparture / 24),
+    );
+  }
+
+  /** FLT-09: same as refundPercent, with the whole days remaining already worked out */
+  async refundPercentForDays(
+    airlineId: string | Types.ObjectId,
+    daysBeforeDeparture: number,
   ): Promise<number> {
     const airline = await this.airlineModel
       .findById(airlineId, { cancellationPolicy: 1 })
       .lean()
       .exec();
     if (!airline) throw new NotFoundException('Airline not found');
-    const rule = airline.cancellationPolicy.rules.find(
-      (r) => hoursBeforeDeparture >= r.hoursBeforeDeparture,
+    const applicable = airline.cancellationPolicy.rules.filter(
+      (r) => r.daysBeforeDeparture <= daysBeforeDeparture,
     );
-    return rule?.refundPercent ?? 0;
+    if (applicable.length === 0) return 0;
+    return applicable.reduce((best, r) =>
+      r.daysBeforeDeparture > best.daysBeforeDeparture ? r : best,
+    ).refundPercent;
+  }
+
+  /**
+   * One-time upgrade of airlines saved before the workbook fixes (hours-based tiers,
+   * one baggage rule for all cabins, any currency). Runs at startup; does nothing once converted.
+   */
+  async onModuleInit() {
+    const old = await this.airlineModel.collection
+      .find({
+        $or: [
+          { 'baggagePolicy.extraBagPrice': { $exists: false } },
+          {
+            'cancellationPolicy.rules.hoursBeforeDeparture': { $exists: true },
+          },
+        ],
+      })
+      .toArray();
+    for (const a of old) {
+      const bp = (a.baggagePolicy ?? {}) as Record<string, unknown>;
+      const oldRules = ((
+        a.cancellationPolicy as { rules?: Record<string, number>[] }
+      )?.rules ?? []) as Record<string, number>[];
+      // hours -> whole days; keep the highest refund when two tiers land on the same day
+      const byDay = new Map<number, number>();
+      for (const r of oldRules) {
+        const day =
+          r.daysBeforeDeparture ??
+          Math.floor((r.hoursBeforeDeparture ?? 0) / 24);
+        byDay.set(day, Math.max(byDay.get(day) ?? 0, r.refundPercent ?? 0));
+      }
+      const rules = [...byDay.entries()]
+        .sort((x, y) => y[0] - x[0])
+        .map(([daysBeforeDeparture, refundPercent]) => ({
+          daysBeforeDeparture,
+          refundPercent,
+        }));
+      await this.airlineModel.collection.updateOne(
+        { _id: a._id },
+        {
+          $set: {
+            'baggagePolicy.extraBagPrice':
+              (bp.extraBagPrice as number) || (bp.extraBagFee as number) || 50,
+            'baggagePolicy.maxExtraBags': (bp.maxExtraBags as number) ?? 3,
+            'cancellationPolicy.rules': rules,
+          },
+          $unset: {
+            'baggagePolicy.cabin': '',
+            'baggagePolicy.checked': '',
+            'baggagePolicy.extraBagFee': '',
+            'baggagePolicy.currency': '',
+          },
+        },
+      );
+    }
+    if (old.length)
+      this.logger.log(
+        `Upgraded ${old.length} airline(s) to the new policy format`,
+      );
   }
 
   // ---------- private ----------
 
   private async getById(id: string): Promise<AirlineDocument> {
-    if (!Types.ObjectId.isValid(id)) throw new BadRequestException('Invalid airline id');
+    if (!Types.ObjectId.isValid(id))
+      throw new BadRequestException('Invalid airline id');
     const airline = await this.airlineModel.findById(id).exec();
     if (!airline) throw new NotFoundException('Airline not found');
     return airline;
   }
 
-  private canManage(user: AuthUser | undefined, airlineId: Types.ObjectId): boolean {
+  private canManage(
+    user: AuthUser | undefined,
+    airlineId: Types.ObjectId,
+  ): boolean {
     if (!user) return false;
     if (user.role === Role.ADMIN) return true;
     return (
@@ -271,25 +386,32 @@ export class AirlinesService {
 
   private async assertCountry(code: string) {
     if (!(await this.reference.findCountry(code))) {
-      throw new BadRequestException(`Unknown country code ${code}. See GET /api/countries`);
+      throw new BadRequestException(
+        `Unknown country code ${code}. See GET /api/countries`,
+      );
     }
   }
 
-  private async assertCurrency(code: string) {
-    if (!(await this.reference.isSupportedCurrency(code))) {
-      throw new BadRequestException(`Unsupported currency ${code}. See GET /api/currencies`);
-    }
-  }
-
-  /** Sorts rules from most to fewest hours and rejects duplicates or refunds that go up closer to departure */
-  private normaliseCancellation(policy: CancellationPolicy): CancellationPolicy {
-    const rules = [...policy.rules].sort((a, b) => b.hoursBeforeDeparture - a.hoursBeforeDeparture);
+  /** FLT-09: sorts tiers from most to fewest days and rejects duplicate thresholds or refunds that go up closer to departure */
+  private normaliseCancellation(
+    policy: CancellationPolicy,
+  ): CancellationPolicy {
+    const rules = [...policy.rules]
+      .map((r) => ({
+        daysBeforeDeparture: r.daysBeforeDeparture,
+        refundPercent: r.refundPercent,
+      }))
+      .sort((a, b) => b.daysBeforeDeparture - a.daysBeforeDeparture);
     for (let i = 1; i < rules.length; i++) {
-      if (rules[i].hoursBeforeDeparture === rules[i - 1].hoursBeforeDeparture) {
-        throw new BadRequestException('Two cancellation rules have the same hoursBeforeDeparture');
+      if (rules[i].daysBeforeDeparture === rules[i - 1].daysBeforeDeparture) {
+        throw new BadRequestException(
+          `Two cancellation tiers have the same threshold (${rules[i].daysBeforeDeparture} days). Each threshold must be unique.`,
+        );
       }
       if (rules[i].refundPercent > rules[i - 1].refundPercent) {
-        throw new BadRequestException('Refunds cannot increase closer to departure');
+        throw new BadRequestException(
+          'Refunds cannot increase closer to departure',
+        );
       }
     }
     return { rules, notes: policy.notes };
@@ -307,21 +429,15 @@ export class AirlinesService {
       contactPhone: a.contactPhone,
       website: a.website,
       baggagePolicy: {
-        cabin: {
-          pieces: a.baggagePolicy.cabin.pieces,
-          maxWeightKg: a.baggagePolicy.cabin.maxWeightKg,
-        },
-        checked: {
-          pieces: a.baggagePolicy.checked.pieces,
-          maxWeightKg: a.baggagePolicy.checked.maxWeightKg,
-        },
-        extraBagFee: a.baggagePolicy.extraBagFee,
-        currency: a.baggagePolicy.currency,
+        extraBagPrice: a.baggagePolicy.extraBagPrice,
+        maxExtraBags: a.baggagePolicy.maxExtraBags,
+        currency: PLATFORM_CURRENCY,
         notes: a.baggagePolicy.notes,
+        freeAllowance: 'Set per cabin on each flight (see the flight details)',
       },
       cancellationPolicy: {
         rules: a.cancellationPolicy.rules.map((r) => ({
-          hoursBeforeDeparture: r.hoursBeforeDeparture,
+          daysBeforeDeparture: r.daysBeforeDeparture,
           refundPercent: r.refundPercent,
         })),
         notes: a.cancellationPolicy.notes,

@@ -1,4 +1,9 @@
-import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
+import {
+  ApiProperty,
+  ApiPropertyOptional,
+  OmitType,
+  PartialType,
+} from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -23,55 +28,30 @@ const upper = ({ value }: { value: unknown }) =>
 
 // ---------- policies ----------
 
-export class BagAllowanceDto {
-  @ApiProperty({ example: 1, minimum: 0, maximum: 10 })
+/** PUT /api/airlines/:id/baggage-policy (FLT-08). Free allowance is set per cabin on each flight. */
+export class BaggagePolicyDto {
+  @ApiProperty({
+    example: 50,
+    description: 'Price of one extra bag in USD (> 0)',
+  })
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01, { message: 'extraBagPrice must be greater than 0' })
+  @Max(10000)
+  extraBagPrice: number;
+
+  @ApiProperty({
+    example: 3,
+    minimum: 0,
+    maximum: 10,
+    description: 'Most extra bags one passenger can add (0 = none sold)',
+  })
   @IsInt()
   @Min(0)
   @Max(10)
-  pieces: number;
-
-  @ApiProperty({ example: 7, minimum: 0, maximum: 100 })
-  @IsNumber()
-  @Min(0)
-  @Max(100)
-  maxWeightKg: number;
-}
-
-/** PUT /api/airlines/:id/baggage-policy */
-export class BaggagePolicyDto {
-  @ApiProperty({
-    type: BagAllowanceDto,
-    example: { pieces: 1, maxWeightKg: 7 },
-  })
-  @ValidateNested()
-  @Type(() => BagAllowanceDto)
-  cabin: BagAllowanceDto;
-
-  @ApiProperty({
-    type: BagAllowanceDto,
-    example: { pieces: 1, maxWeightKg: 23 },
-  })
-  @ValidateNested()
-  @Type(() => BagAllowanceDto)
-  checked: BagAllowanceDto;
-
-  @ApiProperty({ example: 50, description: 'Price of one extra checked bag' })
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  extraBagFee: number;
-
-  @ApiProperty({
-    example: 'USD',
-    description: 'A currency from GET /api/currencies',
-  })
-  @Transform(upper)
-  @Matches(/^[A-Z]{3}$/, {
-    message: 'currency must be a 3-letter code like USD',
-  })
-  currency: string;
+  maxExtraBags: number;
 
   @ApiPropertyOptional({
-    example: 'Sports equipment counts as one checked bag.',
+    example: "Each extra bag has the same max weight as the cabin's free bags.",
   })
   @IsOptional()
   @IsString()
@@ -81,17 +61,17 @@ export class BaggagePolicyDto {
 
 export class CancellationRuleDto {
   @ApiProperty({
-    example: 72,
-    description: 'Cancel at least this many hours before departure...',
+    example: 7,
+    description: 'Cancel at least this many whole days before departure...',
   })
-  @IsInt()
+  @IsInt({ message: 'daysBeforeDeparture must be a whole number' })
   @Min(0)
-  @Max(8760)
-  hoursBeforeDeparture: number;
+  @Max(365)
+  daysBeforeDeparture: number;
 
   @ApiProperty({
     example: 100,
-    description: '...and get this percentage of the price back',
+    description: '...and get this percentage of the price back (0-100)',
   })
   @IsNumber()
   @Min(0)
@@ -104,9 +84,9 @@ export class CancellationPolicyDto {
   @ApiProperty({
     type: [CancellationRuleDto],
     example: [
-      { hoursBeforeDeparture: 72, refundPercent: 100 },
-      { hoursBeforeDeparture: 24, refundPercent: 50 },
-      { hoursBeforeDeparture: 0, refundPercent: 0 },
+      { daysBeforeDeparture: 7, refundPercent: 100 },
+      { daysBeforeDeparture: 2, refundPercent: 50 },
+      { daysBeforeDeparture: 0, refundPercent: 0 },
     ],
   })
   @ValidateNested({ each: true })
@@ -178,7 +158,7 @@ export class CreateAirlineDto {
 
   @ApiPropertyOptional({
     type: BaggagePolicyDto,
-    description: 'Defaults to 1×7 kg cabin, 1×23 kg checked',
+    description: 'Defaults to 50 USD per extra bag, max 3 per passenger',
   })
   @IsOptional()
   @ValidateNested()
@@ -187,7 +167,7 @@ export class CreateAirlineDto {
 
   @ApiPropertyOptional({
     type: CancellationPolicyDto,
-    description: 'Defaults to 100% / 50% / 0%',
+    description: 'Defaults to 100% (7+ days) / 50% (2+ days) / 0%',
   })
   @IsOptional()
   @ValidateNested()
@@ -197,7 +177,11 @@ export class CreateAirlineDto {
 
 /** PATCH /api/airlines/:id (admin or that airline's moderator). The IATA code cannot change. */
 export class UpdateAirlineDto extends PartialType(
-  OmitType(CreateAirlineDto, ['iataCode', 'baggagePolicy', 'cancellationPolicy'] as const),
+  OmitType(CreateAirlineDto, [
+    'iataCode',
+    'baggagePolicy',
+    'cancellationPolicy',
+  ] as const),
 ) {}
 
 /** GET /api/airlines filters */
