@@ -12,6 +12,7 @@ import { FlightBookingsModule } from './flight-bookings/flight-bookings.module';
 import { FlightsModule } from './flights/flights.module';
 import { HotelBookingsModule } from './hotel-bookings/hotel-bookings.module';
 import { HotelsModule } from './hotels/hotels.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { validateEnv } from './config/env.validation';
 import { ReferenceDataModule } from './reference-data/reference-data.module';
 import { ReportsModule } from './reports/reports.module';
@@ -41,6 +42,7 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     AuthModule,
     AuditModule,
+    NotificationsModule, // global, GEN-01 (Member 6)
     AdminModule,
     ReportsModule,
     ReferenceDataModule,

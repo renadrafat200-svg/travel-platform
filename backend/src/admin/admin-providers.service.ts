@@ -2,6 +2,8 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Types } from 'mongoose';
 import { AirlinesService } from '../airlines/airlines.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/schemas/notification.schema';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { HotelsService } from '../hotels/hotels.service';
 
@@ -16,6 +18,7 @@ export class AdminProvidersService {
     private readonly airlines: AirlinesService,
     private readonly hotels: HotelsService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async setAirlineActive(admin: AuthUser, id: string, active: boolean, reason?: string) {
@@ -32,7 +35,15 @@ export class AdminProvidersService {
       targetId: id,
       details: { reason, name: airline.name },
     });
-    // TODO (Member 6): notify this airline's moderators, and users with upcoming confirmed bookings.
+    await this.notifications.notifyProviderChange(
+      'airline',
+      id,
+      active ? NotificationType.PROVIDER_REACTIVATED : NotificationType.PROVIDER_DEACTIVATED,
+      active ? `${airline.name} reactivated` : `${airline.name} deactivated`,
+      active
+        ? `${airline.name} is active on the platform again.`
+        : `${airline.name} was deactivated by an administrator. Existing confirmed bookings stay valid.`,
+    );
     return {
       message: active ? 'Airline reactivated' : 'Airline deactivated',
       airline: updated,
@@ -53,7 +64,15 @@ export class AdminProvidersService {
       targetId: id,
       details: { reason, name: hotel.name },
     });
-    // TODO (Member 6): notify this hotel's moderators, and users with upcoming confirmed bookings.
+    await this.notifications.notifyProviderChange(
+      'hotel',
+      id,
+      active ? NotificationType.PROVIDER_REACTIVATED : NotificationType.PROVIDER_DEACTIVATED,
+      active ? `${hotel.name} reactivated` : `${hotel.name} deactivated`,
+      active
+        ? `${hotel.name} is active on the platform again.`
+        : `${hotel.name} was deactivated by an administrator. Existing confirmed reservations stay valid.`,
+    );
     return {
       message: active ? 'Hotel reactivated' : 'Hotel deactivated',
       hotel: updated,

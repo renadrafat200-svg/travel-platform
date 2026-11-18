@@ -2,6 +2,8 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, QueryFilter, Types } from 'mongoose';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/schemas/notification.schema';
 import { paginate } from '../common/dto/pagination-query.dto';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { ContentModerationService } from './content-moderation.service';
@@ -21,6 +23,7 @@ export class ReportsService {
     @InjectModel(Report.name) private readonly reportModel: Model<Report>,
     private readonly content: ContentModerationService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** A logged-in user reports a post, comment, review or itinerary */
@@ -98,7 +101,13 @@ export class ReportsService {
       targetId: report.targetId,
       details: { reportId: report._id.toString(), reason: report.reason, note: dto.note, reportsClosed: closed },
     });
-    // TODO: when Notifications (Member 6) is merged, notify the reporter (and the author if hidden/deleted).
+    await this.notifications.notify(
+      report.reporter,
+      NotificationType.REPORT_RESOLVED,
+      'Your report was reviewed',
+      `An administrator reviewed your report: ${status.replace('_', ' ')}.`,
+      { reportId: report._id.toString(), status },
+    );
     return { message: `Report ${status.replace('_', ' ')}`, id: report._id.toString(), status, reportsClosed: closed };
   }
 
