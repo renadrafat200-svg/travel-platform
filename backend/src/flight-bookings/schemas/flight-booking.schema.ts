@@ -29,6 +29,8 @@ export enum RefundStatus {
     NONE = 'none',
     PENDING = 'pending',
     REFUNDED = 'refunded',
+    /** PAY-03: Stripe could not send the money back (same values as hotel bookings) */
+    FAILED = 'failed',
 }
 
 @Schema({ _id: false })
@@ -189,6 +191,10 @@ export class FlightBooking {
 
     @Prop({ type: String, enum: RefundStatus, default: RefundStatus.NONE })
     refundStatus: RefundStatus;
+
+    /** PAY-03: Stripe refund id, set by markRefunded() */
+    @Prop()
+    refundReference?: string;
 
     createdAt: Date;
     updatedAt: Date;

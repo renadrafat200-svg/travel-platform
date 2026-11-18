@@ -705,12 +705,17 @@ export class FlightBookingsService {
         return this.toView(confirmed);
     }
 
-    /** Member 6 calls this after the refund went through on Stripe */
-    async markRefunded(id: string) {
+    /** PAY-03: Member 6 calls this when the Stripe refund succeeded (or failed). Same as hotel bookings. */
+    async markRefunded(id: string, refundReference?: string, failed = false) {
         await this.bookingModel
             .updateOne(
-                { _id: id, refundStatus: RefundStatus.PENDING },
-                { $set: { refundStatus: RefundStatus.REFUNDED } },
+                { _id: id, refundStatus: { $in: [RefundStatus.PENDING, RefundStatus.FAILED] } },
+                {
+                    $set: {
+                        refundStatus: failed ? RefundStatus.FAILED : RefundStatus.REFUNDED,
+                        ...(refundReference && { refundReference }),
+                    },
+                },
             )
             .exec();
     }
