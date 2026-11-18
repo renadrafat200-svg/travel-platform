@@ -48,6 +48,12 @@ export class FlightSearchService {
     if (q.returnDate) {
       result.return = await this.searchLeg(q, q.to, q.from, q.returnDate);
     }
+    // FLT-11: tell the user plainly when nothing matches
+    const back = result.return as { total: number } | undefined;
+    if (outbound.total === 0 || (back && back.total === 0)) {
+      result.message =
+        outbound.total === 0 ? 'No flights found' : 'No return flights found for that date';
+    }
     return result;
   }
 

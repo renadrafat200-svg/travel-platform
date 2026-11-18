@@ -14,6 +14,8 @@ import { AuthUser } from '../common/interfaces/auth-user.interface';
 import { assertManagesProvider } from '../common/utils/ownership';
 import { PLATFORM_CURRENCY } from '../config/platform.constants';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
+import { type UploadedImage, validateImages } from '../common/utils/image-upload';
+import { randomUUID } from 'crypto';
 import {
   AirlineQueryDto,
   BaggagePolicyDto,
@@ -26,6 +28,7 @@ import {
   AirlineDocument,
   CancellationPolicy,
 } from './schemas/airline.schema';
+import { AirlineLogoFile } from './schemas/airline-logo-file.schema';
 
 /** Used when the admin creates an airline without giving policies */
 const DEFAULT_BAGGAGE = { extraBagPrice: 50, maxExtraBags: 3 };
@@ -43,6 +46,7 @@ export class AirlinesService implements OnModuleInit {
 
   constructor(
     @InjectModel(Airline.name) private readonly airlineModel: Model<Airline>,
+    @InjectModel(AirlineLogoFile.name) private readonly logoModel: Model<AirlineLogoFile>,
     private readonly reference: ReferenceDataService,
     private readonly audit: AuditService,
   ) {}
@@ -183,6 +187,64 @@ export class AirlinesService implements OnModuleInit {
       targetId: airline._id,
     });
     return this.toView(airline).cancellationPolicy;
+  }
+
+  /**
+   * FLT-01 / GEN-08: upload the airline logo (JPG or PNG, max 5 MB, ONE per airline).
+   * A new upload replaces the old logo. Admin or this airline's moderator.
+   */
+  async uploadLogo(user: AuthUser, id: string, file: UploadedImage | undefined) {
+    const airline = await this.getById(id);
+    assertManagesProvider(user, ProviderType.AIRLINE, airline._id);
+    const [{ type, extension }] = validateImages(file ? [file] : [], 0, 1, 'logo');
+
+    const fileName = `${airline._id.toString()}-${randomUUID()}.${extension}`;
+    await this.logoModel.create({
+      fileName,
+      airline: airline._id,
+      contentType: type,
+      size: file!.size,
+      data: file!.buffer,
+    });
+    const oldFile = this.logoFileName(airline.logoUrl);
+    airline.logoUrl = `/api/airlines/logos/${fileName}`;
+    await airline.save();
+    if (oldFile) await this.logoModel.deleteOne({ fileName: oldFile }).exec();
+
+    await this.audit.log(user, {
+      action: 'airline.logo.upload',
+      targetType: 'airline',
+      targetId: airline._id,
+    });
+    return { logoUrl: airline.logoUrl };
+  }
+
+  /** Removes the airline's logo */
+  async removeLogo(user: AuthUser, id: string) {
+    const airline = await this.getById(id);
+    assertManagesProvider(user, ProviderType.AIRLINE, airline._id);
+    const oldFile = this.logoFileName(airline.logoUrl);
+    if (!oldFile) throw new NotFoundException('This airline has no logo');
+    airline.logoUrl = undefined;
+    await airline.save();
+    await this.logoModel.deleteOne({ fileName: oldFile }).exec();
+    return { logoUrl: null };
+  }
+
+  /** GET /api/airlines/logos/:fileName: the image bytes */
+  async logoFile(fileName: string) {
+    if (!/^[a-f0-9]{24}-[a-f0-9-]{36}\.(jpg|png)$/.test(fileName)) {
+      throw new NotFoundException('Logo not found');
+    }
+    const file = await this.logoModel.findOne({ fileName }).exec();
+    if (!file) throw new NotFoundException('Logo not found');
+    return { data: file.data, contentType: file.contentType };
+  }
+
+  private logoFileName(logoUrl?: string) {
+    return logoUrl?.startsWith('/api/airlines/logos/')
+      ? logoUrl.slice('/api/airlines/logos/'.length)
+      : undefined;
   }
 
   // ---------- helpers for teammates ----------

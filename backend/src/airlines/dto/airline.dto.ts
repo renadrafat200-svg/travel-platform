@@ -135,11 +135,6 @@ export class CreateAirlineDto {
   @MaxLength(2000)
   description?: string;
 
-  @ApiPropertyOptional({ example: 'https://example.com/egyptair-logo.png' })
-  @IsOptional()
-  @IsUrl()
-  logoUrl?: string;
-
   @ApiPropertyOptional({ example: 'support@egyptair.example' })
   @IsOptional()
   @IsEmail()
