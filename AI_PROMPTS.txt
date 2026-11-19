@@ -193,3 +193,23 @@ Members 1-4 (booking confirmed/cancelled, flight cancelled, schedule
 change, account suspend/reactivate, provider deactivation, reports).
 I checked it built, started the API and called every endpoint.
 ================================================
+================================================
+Date: 2026-11-18
+Student: Youssef Samy
+Tool: Claude
+Related Requirement: PAY-01, PAY-02, PAY-03, PAY-04
+
+Prompt:
+Continue my Member 6 part: policies before payment, Stripe payments
+with the webhook, retry and hold expiry, and refunds for cancellations.
+
+How the output was used:
+Claude added GET/POST /api/bookings/:type/:id/policies|accept-policies
+(acceptance stored with a timestamp), POST /api/payments, retry, GET and
+the signed webhook (booking confirmed only by payment_intent.succeeded),
+a job that cancels PaymentIntents when the hold expires, and a refunds
+service (Stripe Refunds API, Refund records, GET /api/refunds/:id,
+refund webhooks, notifications). It added FAILED and refundReference to
+flight bookings so they match hotels. I tested the policy gate and the
+webhook flows (confirm, decline, refund) against the running API.
+================================================

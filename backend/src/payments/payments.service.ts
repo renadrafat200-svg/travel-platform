@@ -21,6 +21,7 @@ import { CreatePaymentDto, RetryPaymentDto } from './dto/payment.dto';
 import { Payment, PaymentDocument, PaymentStatus } from './schemas/payment.schema';
 import { BookingType } from './schemas/policy-acceptance.schema';
 import { PoliciesService } from './policies.service';
+import { RefundsService } from './refunds.service';
 import { StripeService, toCents } from './stripe.service';
 
 /** Seconds of hold that must be left to start a payment (the card form needs a moment) */
@@ -52,6 +53,7 @@ export class PaymentsService {
     private readonly flightBookings: FlightBookingsService,
     private readonly hotelBookings: HotelBookingsService,
     private readonly notifications: NotificationsService,
+    private readonly refunds: RefundsService,
   ) {}
 
   // =====================================================================================
@@ -156,13 +158,16 @@ export class PaymentsService {
           .exec();
         break;
       default:
-        await this.onOtherEvent(event);
+        // PAY-03: refund.created / refund.updated / refund.failed / charge.refunded
+        await this.refunds.handleEvent(event);
     }
     return { received: true, type: event.type };
   }
 
-  /** Hook for refund events (PAY-03) */
-  protected async onOtherEvent(_event: Stripe.Event): Promise<void> {}
+  /** PAY-03: refund a cancelled booking now (the refunds job also does this every 30 seconds) */
+  refundBooking(type: BookingType, bookingId: string) {
+    return this.refunds.refundBooking(type, bookingId);
+  }
 
   private async onSucceeded(intent: Stripe.PaymentIntent) {
     const payment = await this.paymentModel.findOne({ stripePaymentId: intent.id }).exec();
@@ -210,13 +215,8 @@ export class PaymentsService {
   }
 
   /** Paid after the hold expired: the booking cannot be confirmed, so the whole amount goes back */
-  protected async refundLatePayment(payment: PaymentDocument, reason: string): Promise<void> {
-    await this.stripeService.stripe.refunds.create(
-      { payment_intent: payment.stripePaymentId, metadata: { reason: 'hold_expired' } },
-      { idempotencyKey: `late-refund-${payment.stripePaymentId}` },
-    );
-    payment.status = PaymentStatus.REFUNDED;
-    await payment.save();
+  private async refundLatePayment(payment: PaymentDocument, reason: string): Promise<void> {
+    await this.refunds.refundLatePayment(payment); // records a Refund and notifies "Refund issued"
     await this.notifications.notify(
       payment.user,
       NotificationType.REFUND_ISSUED,
