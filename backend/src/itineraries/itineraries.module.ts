@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ExchangeRatesModule } from '../exchange-rates/exchange-rates.module';
 import { UsersModule } from '../users/users.module';
 import { ItinerariesController } from './itineraries.controller';
 import { ItinerariesService } from './itineraries.service';
@@ -23,6 +24,7 @@ import { Itinerary, ItinerarySchema } from './schemas/itinerary.schema';
       { name: ActivityImageFile.name, schema: ActivityImageFileSchema },
     ]),
     UsersModule,
+    ExchangeRatesModule,
   ],
   controllers: [ItinerariesController, ItineraryItemsController],
   providers: [ItinerariesService, ItineraryItemsService],

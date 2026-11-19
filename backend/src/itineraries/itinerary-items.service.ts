@@ -9,7 +9,7 @@ import { Model, Types } from 'mongoose';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { UploadedImage, validateImages } from '../common/utils/image-upload';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
-import { User } from '../users/schemas/user.schema';
+import { ExchangeRatesService } from '../exchange-rates/exchange-rates.service';
 import {
   CreateActivityDto,
   CreateBudgetDto,
@@ -18,25 +18,15 @@ import {
   UpdateBudgetDto,
   UpdateTransportCostDto,
 } from './dto/itinerary-items.dto';
+import { BudgetLine, budgetLines, round2, sumAmounts } from './budget';
 import { ItinerariesService } from './itineraries.service';
 import {
-  BudgetCategory,
   dayDate,
-  INTERCITY_TRANSPORT,
   MAX_ACTIVITY_IMAGES,
   SUMMARY_CATEGORIES,
-  SummaryCategory,
 } from './itinerary.constants';
 import { ActivityImageFile } from './schemas/activity-image-file.schema';
 import { Itinerary, ItineraryDocument } from './schemas/itinerary.schema';
-
-/** One amount that counts towards the budget (ITN-14) */
-export interface BudgetLine {
-  dayIndex: number;
-  category: SummaryCategory;
-  amount: number;
-  currency: string;
-}
 
 /**
  * Member 7: activities and their images (ITN-10, ITN-12), budget entries (ITN-14),
@@ -50,9 +40,9 @@ export class ItineraryItemsService {
     private readonly itineraryModel: Model<Itinerary>,
     @InjectModel(ActivityImageFile.name)
     private readonly imageFileModel: Model<ActivityImageFile>,
-    @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly itineraries: ItinerariesService,
     private readonly reference: ReferenceDataService,
+    private readonly exchangeRates: ExchangeRatesService,
   ) {}
 
   // =====================================================================================
@@ -267,53 +257,42 @@ export class ItineraryItemsService {
   }
 
   // =====================================================================================
-  // Budget summary (ITN-14)
+  // Budget summary (ITN-14, ITN-18)
   // =====================================================================================
 
   /**
-   * Every amount that counts towards the budget: the day's budget entries, its activity
-   * costs (under "activities") and the intercity transport counted on that day.
+   * GET /api/itineraries/:id/budget-summary: totals by category, by day, by city group and
+   * overall, all converted to one currency (?currency=, default: the user's preferred
+   * currency) with the cached exchange rates, plus the date of those rates.
+   * Only itinerary budgets are converted; booking prices are not (PAY-04).
    */
-  budgetLines(itinerary: ItineraryDocument): BudgetLine[] {
-    const lines: BudgetLine[] = [];
-    const dayIndex = new Map(
-      itinerary.days.map((d, i) => [d._id.toString(), i]),
-    );
-    itinerary.days.forEach((day, i) => {
-      for (const b of day.budgets) {
-        lines.push({ dayIndex: i, category: b.category, amount: b.amount, currency: b.currency });
-      }
-      for (const a of day.activities) {
-        if (a.cost !== undefined && a.cost !== null && a.currency) {
-          lines.push({
-            dayIndex: i,
-            category: BudgetCategory.ACTIVITIES,
-            amount: a.cost,
-            currency: a.currency,
-          });
-        }
-      }
-    });
-    for (const t of itinerary.transportCosts) {
-      const i = dayIndex.get(t.day.toString());
-      if (i !== undefined) {
-        lines.push({ dayIndex: i, category: INTERCITY_TRANSPORT, amount: t.amount, currency: t.currency });
-      }
-    }
-    return lines;
+  async budgetSummary(user: AuthUser, id: string, currency?: string) {
+    const itinerary = await this.itineraries.getOwned(user, id);
+    const target = currency
+      ? await this.exchangeRates.assertSupported(currency)
+      : await this.itineraries.preferredCurrency(user.id);
+    return this.summarize(itinerary, target);
   }
 
-  /**
-   * GET /api/itineraries/:id/budget-summary: totals by category, by day, by city group and overall.
-   * Until exchange rates are added (ITN-18), amounts are totalled separately per currency.
-   */
-  async budgetSummary(user: AuthUser, id: string) {
-    const itinerary = await this.itineraries.getOwned(user, id);
-    const lines = this.budgetLines(itinerary);
-    const sum = (filter: (l: BudgetLine) => boolean) => perCurrency(lines.filter(filter));
+  async summarize(itinerary: ItineraryDocument, target: string) {
+    const lines = budgetLines(itinerary);
+    const needsRates = lines.some((l) => l.currency !== target);
+    // 503 with a clear message when no rates were ever cached and the API is down
+    const rates = needsRates ? await this.exchangeRates.getRates() : null;
+    const converted = lines.map((l) => ({
+      ...l,
+      converted: rates
+        ? this.exchangeRates.convert(l.amount, l.currency, target, rates)
+        : l.amount,
+    }));
+    const sum = (filter: (l: BudgetLine) => boolean) =>
+      sumAmounts(converted.filter(filter).map((l) => l.converted));
     const names = await this.itineraries.cityNames();
     return {
       itineraryId: itinerary._id.toString(),
+      currency: target,
+      rateDate: rates?.date ?? null,
+      ratesFetchedAt: rates?.fetchedAt ?? null,
       byCategory: Object.fromEntries(
         SUMMARY_CATEGORIES.map((c) => [c, sum((l) => l.category === c)]),
       ),
@@ -322,13 +301,17 @@ export class ItineraryItemsService {
         dayNumber: i + 1,
         date: dayDate(itinerary.startDate, i),
         city: day.city,
-        totals: sum((l) => l.dayIndex === i),
+        total: sum((l) => l.dayIndex === i),
       })),
       byGroup: this.itineraries.cityGroups(itinerary, names).map((g) => ({
         ...g,
-        totals: sum((l) => l.dayIndex >= g.firstDay - 1 && l.dayIndex <= g.lastDay - 1),
+        subtotal: sum(
+          (l) => l.dayIndex >= g.firstDay - 1 && l.dayIndex <= g.lastDay - 1,
+        ),
       })),
       total: sum(() => true),
+      /** The amounts as entered, before conversion */
+      originalAmounts: perCurrency(lines),
     };
   }
 
@@ -337,10 +320,8 @@ export class ItineraryItemsService {
   // =====================================================================================
 
   /** ACC-09: the user's preferred currency, USD by default */
-  async preferredCurrency(user: AuthUser | undefined): Promise<string> {
-    if (!user) return 'USD';
-    const doc = await this.userModel.findById(user.id).select('preferences').lean().exec();
-    return doc?.preferences?.currency?.toUpperCase() || 'USD';
+  preferredCurrency(user: AuthUser | undefined): Promise<string> {
+    return this.itineraries.preferredCurrency(user?.id);
   }
 
   async checkCurrency(code: string): Promise<string> {
@@ -388,5 +369,5 @@ function perCurrency(lines: BudgetLine[]) {
   for (const l of lines) totals.set(l.currency, (totals.get(l.currency) ?? 0) + l.amount);
   return [...totals.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 }));
+    .map(([currency, amount]) => ({ currency, amount: round2(amount) }));
 }

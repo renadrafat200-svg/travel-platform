@@ -52,6 +52,11 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   FXRATES_API_KEY?: string;
+
+  // ITN-18: only to point at another rates server (default https://api.fxratesapi.com/latest)
+  @IsOptional()
+  @IsString()
+  FXRATES_API_URL?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

@@ -249,3 +249,15 @@ export class UpdateTransportCostDto {
   @MaxLength(NOTE_MAX_LENGTH)
   note?: string;
 }
+
+// ---------------------------------------------------------------- Budget summary (ITN-18)
+
+export class BudgetSummaryQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Currency for all totals, from GET /api/currencies. Default: your preferred currency',
+  })
+  @IsOptional()
+  @IsString()
+  currency?: string;
+}

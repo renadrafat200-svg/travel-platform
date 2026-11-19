@@ -10,7 +10,10 @@ import { Error as MongooseError, Model, Types } from 'mongoose';
 import { paginate, PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { Role } from '../common/enums/role.enum';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import { ExchangeRatesService } from '../exchange-rates/exchange-rates.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
+import { User } from '../users/schemas/user.schema';
+import { budgetLines, sumAmounts } from './budget';
 import {
   AddDayDto,
   CreateItineraryDto,
@@ -52,7 +55,9 @@ export class ItinerariesService {
     private readonly itineraryModel: Model<Itinerary>,
     @InjectModel(ActivityImageFile.name)
     private readonly imageFileModel: Model<ActivityImageFile>,
+    @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly reference: ReferenceDataService,
+    private readonly exchangeRates: ExchangeRatesService,
   ) {}
 
   // =====================================================================================
@@ -220,10 +225,15 @@ export class ItinerariesService {
 
   /**
    * Full itinerary: days with their number, date, activities and budget entries,
-   * the intercity transport costs and the city groups
+   * the intercity transport costs and the city groups. Day totals and group subtotals
+   * (ITN-09) are converted to `currency` (default: the owner's preferred currency);
+   * they are null when no exchange rates are available (ITN-18).
    */
-  async toDetail(doc: ItineraryDocument) {
+  async toDetail(doc: ItineraryDocument, currency?: string) {
     const names = await this.cityNames();
+    const displayCurrency =
+      currency ?? (await this.preferredCurrency(doc.owner.toString()));
+    const dayTotals = await this.convertedDayTotals(doc, displayCurrency);
     const dayNumber = new Map(doc.days.map((d, i) => [d._id.toString(), i + 1]));
     const days = doc.days.map((day, i) => ({
       id: day._id.toString(),
@@ -251,6 +261,14 @@ export class ItinerariesService {
         currency: b.currency,
         note: b.note,
       })),
+      /** Budget entries + activity costs + transport of this day, converted */
+      total: dayTotals.totals?.[i] ?? null,
+    }));
+    const groups = this.cityGroups(doc, names).map((g) => ({
+      ...g,
+      subtotal: dayTotals.totals
+        ? sumAmounts(dayTotals.totals.slice(g.firstDay - 1, g.lastDay))
+        : null,
     }));
     const transportCosts = doc.transportCosts.map((t) => ({
       id: t._id.toString(),
@@ -275,7 +293,12 @@ export class ItinerariesService {
       isHidden: doc.isHidden,
       days,
       transportCosts,
-      groups: this.cityGroups(doc, names),
+      groups,
+      budget: {
+        currency: displayCurrency,
+        total: dayTotals.totals ? sumAmounts(dayTotals.totals) : null,
+        rateDate: dayTotals.rateDate,
+      },
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
     };
@@ -314,6 +337,39 @@ export class ItinerariesService {
   // =====================================================================================
   // Helpers
   // =====================================================================================
+
+  /** ACC-09: a user's preferred currency for budget totals, USD by default */
+  async preferredCurrency(userId: string | undefined): Promise<string> {
+    if (!userId || !Types.ObjectId.isValid(userId)) return 'USD';
+    const user = await this.userModel
+      .findById(userId)
+      .select('preferences')
+      .lean()
+      .exec();
+    return user?.preferences?.currency?.toUpperCase() || 'USD';
+  }
+
+  /** Each day's total in one currency, or totals: null if the rates are missing */
+  private async convertedDayTotals(doc: ItineraryDocument, currency: string) {
+    const lines = budgetLines(doc);
+    const needsRates = lines.some((l) => l.currency !== currency);
+    const rates = needsRates ? await this.exchangeRates.tryGetRates() : null;
+    if (needsRates && !rates) return { totals: null, rateDate: null };
+    try {
+      const perDay = doc.days.map(() => [] as number[]);
+      for (const l of lines) {
+        perDay[l.dayIndex].push(
+          rates
+            ? this.exchangeRates.convert(l.amount, l.currency, currency, rates)
+            : l.amount,
+        );
+      }
+      return { totals: perDay.map(sumAmounts), rateDate: rates?.date ?? null };
+    } catch {
+      // a currency is missing from the cached rates
+      return { totals: null, rateDate: rates?.date ?? null };
+    }
+  }
 
   /**
    * Loads an itinerary the current user may change: the owner or an admin.
