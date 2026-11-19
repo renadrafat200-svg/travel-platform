@@ -4,14 +4,11 @@
  * if the sheet says otherwise. Nothing else needs to change.
  */
 
-/** How long seats stay held while the user pays. After this the hold expires and seats return. */
-export const HOLD_MINUTES = 15;
+/** FLT-22: seats stay held for 10 minutes while the user pays. After this the hold expires and seats return. */
+export const HOLD_MINUTES = 10;
 
-/** How often the background job looks for expired holds */
+/** How often the background job looks for expired holds and completed trips */
 export const EXPIRY_JOB_EVERY_MS = 60_000;
-
-/** Online booking closes this many minutes before departure */
-export const BOOKING_CUTOFF_MINUTES = 120;
 
 /** Most passengers (including infants) in one booking */
 export const MAX_PASSENGERS = 9;

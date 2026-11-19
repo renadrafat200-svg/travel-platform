@@ -4,8 +4,9 @@ import { EXPIRY_JOB_EVERY_MS } from './flight-booking.constants';
 import { FlightBookingsService } from './flight-bookings.service';
 
 /**
- * Background job (FLT-22): every minute, unpaid holds whose time ran out are marked
- * "expired" and their seats go back on sale.
+ * Background job, every minute:
+ *  - FLT-22: unpaid holds whose time ran out are marked "expired" and their seats go back on sale
+ *  - FLT-25: paid bookings whose flights have all departed are marked "completed" (Past)
  */
 @Injectable()
 export class HoldExpiryJob {
@@ -21,6 +22,8 @@ export class HoldExpiryJob {
         try {
             const count = await this.bookings.expireOverdue();
             if (count) this.logger.log(`Released seats of ${count} expired flight hold(s)`);
+            const completed = await this.bookings.completeDeparted();
+            if (completed) this.logger.log(`Marked ${completed} flight booking(s) completed`);
         } catch (err) {
             this.logger.error('Hold expiry job failed', err as Error);
         } finally {

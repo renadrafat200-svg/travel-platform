@@ -6,6 +6,7 @@ import {
     IsArray,
     IsDefined,
     IsEnum,
+    IsIn,
     IsInt,
     IsMongoId,
     IsOptional,
@@ -99,6 +100,16 @@ export class PassengerDto {
     @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'dateOfBirth must look like 2004-05-17' })
     dateOfBirth: string;
 
+    @ApiProperty({
+        example: 'A12345678',
+        description: 'Passport or national ID number: 5 to 20 letters and digits',
+    })
+    @IsString()
+    @Matches(/^[A-Za-z0-9]{5,20}$/, {
+        message: 'passportNumber must be 5 to 20 letters and digits (passport or national ID)',
+    })
+    passportNumber: string;
+
     @ApiPropertyOptional({ example: 1, minimum: 0, maximum: MAX_EXTRA_BAGS, default: 0 })
     @IsOptional()
     @IsInt()
@@ -125,9 +136,22 @@ export class CreateFlightBookingDto {
     passengers: PassengerDto[];
 }
 
+/** FLT-25: how "My bookings" is grouped */
+export const BOOKING_GROUPS = ['upcoming', 'past', 'cancelled'] as const;
+export type BookingGroup = (typeof BOOKING_GROUPS)[number];
+
 /** GET /api/flight-bookings (FLT-25) */
 export class MyFlightBookingsQueryDto extends PaginationQueryDto {
-    @ApiPropertyOptional({ enum: BookingStatus })
+    @ApiPropertyOptional({
+        enum: BOOKING_GROUPS,
+        description:
+            'Only one group, paginated. Without it (and without status), all three groups are returned (first page each).',
+    })
+    @IsOptional()
+    @IsIn(BOOKING_GROUPS)
+    group?: BookingGroup;
+
+    @ApiPropertyOptional({ enum: BookingStatus, description: 'Or: one exact status, as a flat list' })
     @IsOptional()
     @IsEnum(BookingStatus)
     status?: BookingStatus;
@@ -139,6 +163,18 @@ export class FlightBookingsQueryDto extends PaginationQueryDto {
     @IsOptional()
     @IsEnum(BookingStatus)
     status?: BookingStatus;
+}
+
+/** GET /api/flight-bookings/:id/e-ticket (FLT-23) */
+export class ETicketQueryDto {
+    @ApiPropertyOptional({
+        enum: ['pdf', 'json'],
+        default: 'pdf',
+        description: 'pdf = downloadable e-ticket file; json = the same data as JSON',
+    })
+    @IsOptional()
+    @IsIn(['pdf', 'json'])
+    format?: 'pdf' | 'json';
 }
 
 /** POST /api/flight-bookings/:id/cancel (FLT-26) */

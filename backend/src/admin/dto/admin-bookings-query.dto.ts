@@ -7,7 +7,7 @@ export enum AdminBookingType {
   HOTEL = 'hotel',
 }
 
-/** Every status a flight or hotel booking can have ("completed" exists for hotels only) */
+/** Every status a flight or hotel booking can have */
 export enum AdminBookingStatus {
   PENDING = 'pending',
   CONFIRMED = 'confirmed',

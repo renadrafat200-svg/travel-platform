@@ -32,9 +32,6 @@ export class AdminBookingsService {
     });
 
     if (query.type === AdminBookingType.FLIGHT) {
-      if (query.status === AdminBookingStatus.COMPLETED) {
-        throw new BadRequestException('Flight bookings have no "completed" status');
-      }
       return this.flightBookings.listAll(
         Object.assign(page, {
           status: query.status as BookingStatus | undefined,

@@ -23,11 +23,11 @@ import {
     FlightBookingsQueryDto,
     HoldFlightDto,
     LegSelectionDto,
+    BookingGroup,
     MyFlightBookingsQueryDto,
     PassengerDto,
 } from './dto/flight-booking.dto';
 import {
-    BOOKING_CUTOFF_MINUTES,
     CHILD_MAX_AGE,
     HOLD_MINUTES,
     INFANT_MAX_AGE,
@@ -51,6 +51,39 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** No 0/O or 1/I, so references are easy to read out loud */
 const REFERENCE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+/** FLT-25: "My bookings" groups (same idea as hotel reservations, HTL-20) */
+const GROUP_FILTERS: Record<
+    BookingGroup,
+    { statuses: BookingStatus[]; sort: Record<string, 1 | -1> }
+> = {
+    upcoming: {
+        statuses: [BookingStatus.PENDING, BookingStatus.CONFIRMED],
+        sort: { 'legs.0.departureTime': 1, _id: 1 },
+    },
+    past: {
+        statuses: [BookingStatus.COMPLETED],
+        sort: { 'legs.0.departureTime': -1, _id: -1 },
+    },
+    cancelled: {
+        statuses: [BookingStatus.CANCELLED, BookingStatus.EXPIRED],
+        sort: { updatedAt: -1, _id: -1 },
+    },
+};
+
+/** What cancelling a booking right now would give back (FLT-26) */
+export interface RefundQuote {
+    cancellable: boolean;
+    /** Why it cannot be cancelled, when cancellable is false */
+    reason?: string;
+    paid: boolean;
+    /** Hours left until the OUTBOUND flight leaves (its current time) */
+    hoursBeforeDeparture: number | null;
+    refundPercent: number;
+    refundAmount: number;
+    totalAmount: number;
+    currency: string;
+}
 
 @Injectable()
 export class FlightBookingsService {
@@ -104,8 +137,8 @@ export class FlightBookingsService {
             );
         }
 
-        const now = new Date();
-        const cutoff = new Date(now.getTime() + BOOKING_CUTOFF_MINUTES * MINUTE);
+        // Flights can be booked until they depart (no extra cut-off)
+        const cutoff = new Date();
 
         // 1. Load and check the flight(s)
         const outbound = await this.getBookableFlight(dto.outbound, cutoff);
@@ -232,26 +265,43 @@ export class FlightBookingsService {
 
     /** The logged-in user's own flight bookings, newest first */
     async findMine(user: AuthUser, query: MyFlightBookingsQueryDto) {
-        await this.expireOverdue({ user: new Types.ObjectId(user.id) });
+        const mine = { user: new Types.ObjectId(user.id) };
+        await this.expireOverdue(mine);
+        await this.completeDeparted(mine);
 
-        const filter: QueryFilter<FlightBooking> = {
-            user: new Types.ObjectId(user.id),
+        const page = async (filter: QueryFilter<FlightBooking>, sort: Record<string, 1 | -1>) => {
+            const [docs, total] = await Promise.all([
+                this.bookingModel
+                    .find(filter)
+                    .sort(sort)
+                    .skip(query.skip)
+                    .limit(query.limit)
+                    .exec(),
+                this.bookingModel.countDocuments(filter).exec(),
+            ]);
+            return paginate(
+                docs.map((d) => this.toView(d)),
+                total,
+                query,
+            );
         };
-        if (query.status) filter.status = query.status;
-        const [docs, total] = await Promise.all([
-            this.bookingModel
-                .find(filter)
-                .sort({ createdAt: -1 })
-                .skip(query.skip)
-                .limit(query.limit)
-                .exec(),
-            this.bookingModel.countDocuments(filter).exec(),
+        const groupPage = (group: BookingGroup) => {
+            const { statuses, sort } = GROUP_FILTERS[group];
+            return page({ ...mine, status: { $in: statuses } }, sort);
+        };
+
+        // One exact status: flat list, newest first
+        if (query.status) {
+            return page({ ...mine, status: query.status }, { createdAt: -1, _id: -1 });
+        }
+        // FLT-25: Upcoming / Past / Cancelled
+        if (query.group) return { group: query.group, ...(await groupPage(query.group)) };
+        const [upcoming, past, cancelled] = await Promise.all([
+            groupPage('upcoming'),
+            groupPage('past'),
+            groupPage('cancelled'),
         ]);
-        return paginate(
-            docs.map((d) => this.toView(d)),
-            total,
-            query,
-        );
+        return { upcoming, past, cancelled };
     }
 
     /** One booking. Only its owner or an admin can open it (403 otherwise). */
@@ -260,13 +310,23 @@ export class FlightBookingsService {
         return this.toView(booking);
     }
 
+    /** FLT-26: what cancelling would refund right now, without cancelling anything */
+    async cancelPreview(user: AuthUser, id: string): Promise<RefundQuote & { reference: string; status: BookingStatus }> {
+        const booking = await this.getOwned(user, id);
+        return {
+            reference: booking.reference,
+            status: booking.status,
+            ...(await this.refundQuote(booking)),
+        };
+    }
+
     /**
  * E-ticket for a confirmed booking: ticket numbers, passengers, and the flights with
  * their CURRENT times (so a schedule change shows up on the ticket).
  */
     async eTicket(user: AuthUser, id: string) {
         const booking = await this.getOwned(user, id);
-        if (booking.status !== BookingStatus.CONFIRMED) {
+        if (booking.status !== BookingStatus.CONFIRMED && booking.status !== BookingStatus.COMPLETED) {
             throw new BadRequestException('E-tickets are only available for confirmed (paid) bookings');
         }
         const flights = await Promise.all(
@@ -293,6 +353,7 @@ export class FlightBookingsService {
                     durationMinutes: f?.durationMinutes,
                     passengers: booking.passengers.map((p, j) => ({
                         name: `${p.firstName} ${p.lastName}`,
+                        passportNumber: p.passportNumber ?? null,
                         type: p.type,
                         ticketNumber: leg.ticketNumbers[j],
                         extraBags: p.extraBags,
@@ -307,7 +368,10 @@ export class FlightBookingsService {
         const flight = await this.getManagedFlight(user, flightId);
 
         const bookings = await this.bookingModel
-            .find({ 'legs.flight': flight._id, status: BookingStatus.CONFIRMED })
+            .find({
+                'legs.flight': flight._id,
+                status: { $in: [BookingStatus.CONFIRMED, BookingStatus.COMPLETED] },
+            })
             .sort({ confirmedAt: 1 })
             .exec();
 
@@ -318,6 +382,7 @@ export class FlightBookingsService {
                 name: `${p.firstName} ${p.lastName}`,
                 type: p.type,
                 dateOfBirth: p.dateOfBirth,
+                passportNumber: p.passportNumber ?? '',
                 cabinClass: leg.cabinClass,
                 extraBags: p.extraBags,
                 ticketNumber: leg.ticketNumbers[i],
@@ -380,6 +445,7 @@ export class FlightBookingsService {
             'Name',
             'Type',
             'Date of birth',
+            'Passport/ID',
             'Cabin',
             'Extra bags',
         ];
@@ -389,6 +455,7 @@ export class FlightBookingsService {
             p.name,
             p.type,
             p.dateOfBirth,
+            p.passportNumber,
             p.cabinClass,
             p.extraBags,
         ]);
@@ -405,8 +472,9 @@ export class FlightBookingsService {
     /**
      * User cancels their booking.
      * - pending (not paid yet): seats go back, nothing to refund
-     * - confirmed: seats go back, refund = the airline's cancellation policy for how many
-     *   hours are left before each flight. Member 6 sends the money back.
+     * - confirmed: seats go back, refund = the airline's cancellation policy for the time left
+     *   before the OUTBOUND flight, applied to the whole booking (also for a round trip).
+     *   Member 6 sends the money back.
      */
     async cancel(user: AuthUser, id: string, dto: CancelFlightBookingDto) {
         const booking = await this.getOwned(user, id);
@@ -439,27 +507,10 @@ export class FlightBookingsService {
             throw new BadRequestException(`This booking is already ${booking.status}`);
         }
 
-        // Confirmed: refund per flight, using each flight's CURRENT departure time
-        const now = Date.now();
-        let refundAmount = 0;
-        for (const leg of booking.legs) {
-            const flight = await this.flightModel
-                .findById(leg.flight, { departureTime: 1 })
-                .lean()
-                .exec();
-            const departure = flight?.departureTime ?? leg.departureTime;
-            if (departure.getTime() <= now) {
-                throw new BadRequestException(
-                    `Flight ${leg.flightNumber} has already departed, so this booking can no longer be cancelled`,
-                );
-            }
-            const hoursLeft = (departure.getTime() - now) / HOUR;
-            const percent = await this.airlines.refundPercent(leg.airline, hoursLeft);
-            refundAmount += (leg.amount * percent) / 100;
-        }
-        refundAmount = round2(refundAmount);
-        const refundPercent =
-            booking.totalAmount > 0 ? Math.round((refundAmount / booking.totalAmount) * 100) : 0;
+        // Confirmed: one refund tier for the whole booking, from the outbound flight's CURRENT time
+        const quote = await this.refundQuote(booking);
+        if (!quote.cancellable) throw new BadRequestException(quote.reason);
+        const { refundPercent, refundAmount } = quote;
 
         const updated = await this.bookingModel
             .findOneAndUpdate(
@@ -601,6 +652,7 @@ export class FlightBookingsService {
         },
     ) {
         await this.expireOverdue();
+        await this.completeDeparted();
         const filter: QueryFilter<FlightBooking> = {};
         if (query.status) filter.status = query.status;
         if (query.airlineId) filter['legs.airline'] = new Types.ObjectId(query.airlineId);
@@ -720,6 +772,104 @@ export class FlightBookingsService {
             .exec();
     }
 
+    /**
+     * FLT-26: the refund for cancelling now. The tier is chosen by the time left before the
+     * OUTBOUND flight (its current departure time) and applies to the whole booking,
+     * including the return flight of a round trip.
+     */
+    private async refundQuote(booking: FlightBookingDocument): Promise<RefundQuote> {
+        const base = {
+            paid: booking.status === BookingStatus.CONFIRMED,
+            totalAmount: booking.totalAmount,
+            currency: booking.currency,
+        };
+        const none = { hoursBeforeDeparture: null, refundPercent: 0, refundAmount: 0 };
+        if (booking.status !== BookingStatus.PENDING && booking.status !== BookingStatus.CONFIRMED) {
+            return { ...base, ...none, cancellable: false, reason: `This booking is already ${booking.status}` };
+        }
+        const outbound = booking.legs[0];
+        const flight = await this.flightModel
+            .findById(outbound.flight, { departureTime: 1 })
+            .lean()
+            .exec();
+        const departure = flight?.departureTime ?? outbound.departureTime;
+        const hoursLeft = (departure.getTime() - Date.now()) / HOUR;
+        const hoursBeforeDeparture = Math.max(0, Math.round(hoursLeft * 10) / 10);
+        if (booking.status === BookingStatus.PENDING) {
+            // Not paid yet: cancelling just gives the seats back
+            return { ...base, cancellable: true, hoursBeforeDeparture, refundPercent: 0, refundAmount: 0 };
+        }
+        if (hoursLeft <= 0) {
+            return {
+                ...base,
+                ...none,
+                hoursBeforeDeparture: 0,
+                cancellable: false,
+                reason: `Flight ${outbound.flightNumber} has already departed, so this booking can no longer be cancelled`,
+            };
+        }
+        const refundPercent = await this.airlines.refundPercent(outbound.airline, hoursLeft);
+        return {
+            ...base,
+            cancellable: true,
+            hoursBeforeDeparture,
+            refundPercent,
+            refundAmount: round2((booking.totalAmount * refundPercent) / 100),
+        };
+    }
+
+    /**
+     * Confirmed bookings whose flights have ALL departed become "completed" (they move to Past).
+     * Uses the flights' current times, so a rescheduled flight is handled correctly, and copies
+     * a changed departure time onto the booking (so lists show and sort by the new time).
+     * Called every minute by HoldExpiryJob, and before a user lists their bookings.
+     */
+    async completeDeparted(extraFilter: QueryFilter<FlightBooking> = {}): Promise<number> {
+        const now = new Date();
+        const candidates = await this.bookingModel
+            .find(
+                { ...extraFilter, status: { $in: [BookingStatus.PENDING, BookingStatus.CONFIRMED] } },
+                { legs: 1, status: 1 },
+            )
+            .limit(1000)
+            .lean()
+            .exec();
+        if (!candidates.length) return 0;
+        const flightIds = [...new Set(candidates.flatMap((b) => b.legs.map((l) => l.flight.toString())))];
+        const flights = await this.flightModel
+            .find({ _id: { $in: flightIds } }, { departureTime: 1 })
+            .lean()
+            .exec();
+        const departure = new Map(flights.map((f) => [f._id.toString(), f.departureTime]));
+        let count = 0;
+        for (const b of candidates) {
+            // Flight rescheduled by the airline: keep the booking's copy of the time in step
+            const moved: Record<string, Date> = {};
+            b.legs.forEach((l, i) => {
+                const live = departure.get(l.flight.toString());
+                if (live && live.getTime() !== l.departureTime.getTime()) {
+                    moved[`legs.${i}.departureTime`] = live;
+                }
+            });
+            if (Object.keys(moved).length) {
+                await this.bookingModel.updateOne({ _id: b._id }, { $set: moved }).exec();
+            }
+            if (b.status !== BookingStatus.CONFIRMED) continue;
+            const allDeparted = b.legs.every(
+                (l) => (departure.get(l.flight.toString()) ?? l.departureTime) <= now,
+            );
+            if (!allDeparted) continue;
+            const res = await this.bookingModel
+                .updateOne(
+                    { _id: b._id, status: BookingStatus.CONFIRMED },
+                    { $set: { status: BookingStatus.COMPLETED, completedAt: now } },
+                )
+                .exec();
+            count += res.modifiedCount;
+        }
+        return count;
+    }
+
     // =====================================================================================
     // Private helpers
     // =====================================================================================
@@ -735,7 +885,7 @@ export class FlightBookingsService {
         }
         if (flight.departureTime <= cutoff) {
             throw new BadRequestException(
-                `Online booking closes ${BOOKING_CUTOFF_MINUTES / 60} hours before departure`,
+                `Flight ${flight.flightNumber} has already departed and can no longer be booked`,
             );
         }
         const cabin = flight.cabins.find((c) => c.cabinClass === sel.cabinClass);
@@ -761,10 +911,17 @@ export class FlightBookingsService {
                 firstName: p.firstName.trim(),
                 lastName: p.lastName.trim(),
                 dateOfBirth: p.dateOfBirth,
+                passportNumber: p.passportNumber.trim().toUpperCase(),
                 type,
                 extraBags: p.extraBags ?? 0,
             };
         });
+        const documents = passengers.map((p) => p.passportNumber);
+        if (new Set(documents).size !== documents.length) {
+            throw new BadRequestException(
+                'Two passengers have the same passport/ID number. Each passenger needs their own.',
+            );
+        }
         const adults = passengers.filter((p) => p.type === PassengerType.ADULT).length;
         const infants = passengers.filter((p) => p.type === PassengerType.INFANT).length;
         if (adults === 0) {
@@ -883,6 +1040,10 @@ export class FlightBookingsService {
             await this.expireOverdue({ _id: booking._id });
             booking = (await this.bookingModel.findById(id).exec())!;
         }
+        // A trip that has fully departed: mark it completed now
+        if (booking.status === BookingStatus.CONFIRMED && (await this.completeDeparted({ _id: booking._id }))) {
+            booking = (await this.bookingModel.findById(id).exec())!;
+        }
         return booking;
     }
 
@@ -952,10 +1113,12 @@ export class FlightBookingsService {
                 firstName: p.firstName,
                 lastName: p.lastName,
                 dateOfBirth: p.dateOfBirth,
+                passportNumber: p.passportNumber ?? null,
                 type: p.type,
                 extraBags: p.extraBags,
             })),
             confirmedAt: b.confirmedAt,
+            completedAt: b.completedAt,
             cancelledAt: b.cancelledAt,
             cancelledBy: b.cancelledBy,
             cancellationReason: b.cancellationReason,
