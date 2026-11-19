@@ -132,6 +132,24 @@ export class ItineraryDay {
 }
 export const ItineraryDaySchema = SchemaFactory.createForClass(ItineraryDay);
 
+/** ITN-21: where a clone came from; it credits the original author */
+@Schema({ _id: false })
+export class ClonedFrom {
+  @Prop({ type: Types.ObjectId, required: true })
+  itinerary: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  author: Types.ObjectId;
+
+  /** Kept as text so the credit stays even if the original is deleted */
+  @Prop({ required: true })
+  authorName: string;
+
+  @Prop({ required: true })
+  title: string;
+}
+export const ClonedFromSchema = SchemaFactory.createForClass(ClonedFrom);
+
 /**
  * ITN-01: a trip plan. Days (with their activities and budgets) and transport costs are
  * embedded so the whole plan is one document: when an admin
@@ -185,6 +203,10 @@ export class Itinerary {
   @Prop({ type: [String], default: [], index: true })
   cities: string[];
 
+  /** ITN-21: set on clones. The clone is independent; this is only the credit. */
+  @Prop({ type: ClonedFromSchema })
+  clonedFrom?: ClonedFrom;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -197,6 +219,8 @@ ItinerarySchema.index({ owner: 1, updatedAt: -1 });
 ItinerarySchema.index({ 'days.activities._id': 1 });
 ItinerarySchema.index({ 'days.budgets._id': 1 });
 ItinerarySchema.index({ 'transportCosts._id': 1 });
+// ITN-21: public search, newest first
+ItinerarySchema.index({ isPublic: 1, isHidden: 1, updatedAt: -1 });
 
 ItinerarySchema.pre('save', function () {
   this.dayCount = this.days.length;

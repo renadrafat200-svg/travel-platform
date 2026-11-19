@@ -219,7 +219,19 @@ export class ItinerariesService {
       days: doc.dayCount,
       visibility: doc.isPublic ? Visibility.PUBLIC : Visibility.PRIVATE,
       isHidden: doc.isHidden,
+      clonedFrom: this.clonedFromView(doc),
       updatedAt: doc.updatedAt,
+    };
+  }
+
+  /** ITN-21: credit to the original author of a clone */
+  clonedFromView(doc: ItineraryDocument) {
+    if (!doc.clonedFrom) return null;
+    return {
+      itineraryId: doc.clonedFrom.itinerary.toString(),
+      authorId: doc.clonedFrom.author.toString(),
+      authorName: doc.clonedFrom.authorName,
+      title: doc.clonedFrom.title,
     };
   }
 
@@ -291,6 +303,7 @@ export class ItinerariesService {
       dayCount: doc.days.length,
       visibility: doc.isPublic ? Visibility.PUBLIC : Visibility.PRIVATE,
       isHidden: doc.isHidden,
+      clonedFrom: this.clonedFromView(doc),
       days,
       transportCosts,
       groups,
