@@ -43,6 +43,7 @@ import {
     PassengerType,
     RefundStatus,
 } from './schemas/flight-booking.schema';
+import { SeatAssignment } from './schemas/seat-assignment.schema';
 import { SeatInventoryService } from './seat-inventory.service';
 
 const MINUTE = 60_000;
@@ -93,6 +94,8 @@ export class FlightBookingsService {
         @InjectModel(FlightBooking.name)
         private readonly bookingModel: Model<FlightBooking>,
         @InjectModel(Flight.name) private readonly flightModel: Model<Flight>,
+        @InjectModel(SeatAssignment.name)
+        private readonly seatAssignmentModel: Model<SeatAssignment>,
         private readonly seats: SeatInventoryService,
         private readonly flights: FlightsService,
         private readonly airlines: AirlinesService,
@@ -335,6 +338,10 @@ export class FlightBookingsService {
                 return flight ? this.flights.fullView(flight) : null;
             }),
         );
+        // FLT-28 (optional): chosen seats
+        const seats = await this.seatAssignmentModel.find({ booking: booking._id }).lean().exec();
+        const seatOf = (flight: Types.ObjectId, i: number) =>
+            seats.find((s) => s.flight.equals(flight) && s.passengerIndex === i)?.seat ?? null;
         return {
             reference: booking.reference,
             status: booking.status,
@@ -355,6 +362,7 @@ export class FlightBookingsService {
                         name: `${p.firstName} ${p.lastName}`,
                         passportNumber: p.passportNumber ?? null,
                         type: p.type,
+                        seat: seatOf(leg.flight, j),
                         ticketNumber: leg.ticketNumbers[j],
                         extraBags: p.extraBags,
                     })),
@@ -375,6 +383,7 @@ export class FlightBookingsService {
             .sort({ confirmedAt: 1 })
             .exec();
 
+        const seats = await this.seatAssignmentModel.find({ flight: flight._id }).lean().exec();
         const items = bookings.flatMap((b) => {
             const leg = b.legs.find((l) => l.flight.equals(flight._id))!;
             return b.passengers.map((p, i) => ({
@@ -383,6 +392,7 @@ export class FlightBookingsService {
                 type: p.type,
                 dateOfBirth: p.dateOfBirth,
                 passportNumber: p.passportNumber ?? '',
+                seat: seats.find((s) => s.booking.equals(b._id) && s.passengerIndex === i)?.seat ?? '',
                 cabinClass: leg.cabinClass,
                 extraBags: p.extraBags,
                 ticketNumber: leg.ticketNumbers[i],
@@ -446,6 +456,7 @@ export class FlightBookingsService {
             'Type',
             'Date of birth',
             'Passport/ID',
+            'Seat',
             'Cabin',
             'Extra bags',
         ];
@@ -456,6 +467,7 @@ export class FlightBookingsService {
             p.type,
             p.dateOfBirth,
             p.passportNumber,
+            p.seat,
             p.cabinClass,
             p.extraBags,
         ]);
@@ -1029,7 +1041,7 @@ export class FlightBookingsService {
         };
     }
 
-    private async getOwned(user: AuthUser, id: string): Promise<FlightBookingDocument> {
+    async getOwned(user: AuthUser, id: string): Promise<FlightBookingDocument> {
         if (!Types.ObjectId.isValid(id)) throw new BadRequestException('Invalid booking id');
         let booking = await this.bookingModel.findById(id).exec();
         if (!booking) throw new NotFoundException('Booking not found');
@@ -1047,7 +1059,9 @@ export class FlightBookingsService {
         return booking;
     }
 
-    private releaseSeats(booking: FlightBooking) {
+    /** Gives the seats back, and frees any chosen seat numbers (FLT-28) */
+    private async releaseSeats(booking: FlightBooking) {
+        await this.seatAssignmentModel.deleteMany({ booking: booking._id }).exec();
         return this.seats.releaseAll(
             booking.legs.map((l) => ({
                 flightId: l.flight,
@@ -1084,7 +1098,7 @@ export class FlightBookingsService {
         return `${airlineCode}-${digits}`;
     }
 
-    private toView(b: FlightBookingDocument) {
+    toView(b: FlightBookingDocument) {
         const pending = b.status === BookingStatus.PENDING;
         return {
             id: b._id.toString(),
@@ -1126,6 +1140,12 @@ export class FlightBookingsService {
             refundAmount: b.refundAmount,
             refundStatus: b.refundStatus,
             expiredAt: b.expiredAt,
+            // FLT-27 (optional)
+            changes: (b.changes ?? []).map((c) => ({
+                changedAt: c.changedAt,
+                from: { flightNumber: c.fromFlightNumber, departureUtc: c.fromDeparture },
+                to: { flightNumber: c.toFlightNumber, departureUtc: c.toDeparture },
+            })),
             createdAt: b.createdAt,
         };
     }

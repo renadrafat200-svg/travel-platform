@@ -127,6 +127,36 @@ export class BookingLeg {
 }
 const BookingLegSchema = SchemaFactory.createForClass(BookingLeg);
 
+/** FLT-27 (optional): one flight change made by the user */
+@Schema({ _id: false })
+export class FlightChange {
+    @Prop({ required: true })
+    changedAt: Date;
+
+    /** 0 = outbound, 1 = return */
+    @Prop({ required: true })
+    legIndex: number;
+
+    @Prop({ type: Types.ObjectId, required: true })
+    fromFlight: Types.ObjectId;
+
+    @Prop({ required: true })
+    fromFlightNumber: string;
+
+    @Prop({ required: true })
+    fromDeparture: Date;
+
+    @Prop({ type: Types.ObjectId, required: true })
+    toFlight: Types.ObjectId;
+
+    @Prop({ required: true })
+    toFlightNumber: string;
+
+    @Prop({ required: true })
+    toDeparture: Date;
+}
+const FlightChangeSchema = SchemaFactory.createForClass(FlightChange);
+
 @Schema({ timestamps: true })
 export class FlightBooking {
     _id: Types.ObjectId;
@@ -201,6 +231,10 @@ export class FlightBooking {
 
     @Prop({ type: String, enum: RefundStatus, default: RefundStatus.NONE })
     refundStatus: RefundStatus;
+
+    /** FLT-27 (optional): flight changes, oldest first */
+    @Prop({ type: [FlightChangeSchema], default: [] })
+    changes: FlightChange[];
 
     /** PAY-03: Stripe refund id, set by markRefunded() */
     @Prop()

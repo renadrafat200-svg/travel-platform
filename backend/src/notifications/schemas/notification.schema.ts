@@ -20,6 +20,8 @@ export enum NotificationType {
   REPORT_RESOLVED = 'report.resolved',
   /** HTL-26 (optional): the hotel replied to your review */
   REVIEW_REPLIED = 'review.replied',
+  /** FLT-27 (optional): the user moved their booking to another flight */
+  BOOKING_CHANGED = 'booking.changed',
 }
 
 @Schema({ timestamps: { createdAt: true, updatedAt: false } })

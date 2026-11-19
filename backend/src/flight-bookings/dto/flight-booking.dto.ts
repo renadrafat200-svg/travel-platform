@@ -185,3 +185,31 @@ export class CancelFlightBookingDto {
     @MaxLength(500)
     reason?: string;
 }
+/** PATCH /api/flight-bookings/:id/seat (FLT-28, optional) */
+export class SelectSeatDto {
+    @ApiProperty({ description: 'Which flight of the booking (flightId from the booking)' })
+    @IsMongoId()
+    flightId: string;
+
+    @ApiProperty({ example: 1, minimum: 1, description: 'Passenger number in the booking (1 = first passenger)' })
+    @IsInt()
+    @Min(1)
+    @Max(MAX_PASSENGERS)
+    passenger: number;
+
+    @ApiProperty({ example: '12A', description: 'A free seat of the booked cabin (see GET /api/flight-bookings/{id}/seats)' })
+    @IsString()
+    @Matches(/^\d{1,3}[A-Fa-f]$/, { message: 'seat must look like 12A' })
+    seat: string;
+}
+
+/** PATCH /api/flight-bookings/:id/change-flight (FLT-27, optional) */
+export class ChangeFlightDto {
+    @ApiProperty({ description: 'The flight of the booking to replace (its flightId)' })
+    @IsMongoId()
+    currentFlightId: string;
+
+    @ApiProperty({ description: 'The new flight: same airline, same route, same cabin class' })
+    @IsMongoId()
+    newFlightId: string;
+}
