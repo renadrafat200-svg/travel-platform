@@ -3,33 +3,20 @@ import { HydratedDocument, Types } from 'mongoose';
 
 export type AirlineDocument = HydratedDocument<Airline>;
 
-/** Allowance for one kind of bag, e.g. 1 cabin bag up to 7 kg */
-@Schema({ _id: false })
-export class BagAllowance {
-  @Prop({ required: true, min: 0 })
-  pieces: number;
-
-  @Prop({ required: true, min: 0 })
-  maxWeightKg: number;
-}
-const BagAllowanceSchema = SchemaFactory.createForClass(BagAllowance);
-
-/** The airline's baggage rules, shown to travellers before they book */
+/**
+ * FLT-08: the airline's extra-baggage rules.
+ * The FREE allowance (bag count and max kg per bag) is set per cabin on each flight (FLT-04);
+ * each extra bag has the same max weight as that cabin's free bags. Prices are in USD (PAY-04).
+ */
 @Schema({ _id: false })
 export class BaggagePolicy {
-  @Prop({ type: BagAllowanceSchema, required: true })
-  cabin: BagAllowance;
+  /** Price of one extra bag, > 0 (Member 3 adds it to the booking total) */
+  @Prop({ required: true, min: 0.01 })
+  extraBagPrice: number;
 
-  @Prop({ type: BagAllowanceSchema, required: true })
-  checked: BagAllowance;
-
-  /** Price of one extra checked bag (Member 3 uses this when a passenger adds bags) */
+  /** Maximum extra bags one passenger may add, >= 0 (0 = extra bags not sold) */
   @Prop({ required: true, min: 0 })
-  extraBagFee: number;
-
-  /** ISO 4217 currency of extraBagFee, from the official Countries dataset */
-  @Prop({ required: true, uppercase: true })
-  currency: string;
+  maxExtraBags: number;
 
   @Prop({ trim: true, maxlength: 1000 })
   notes?: string;
@@ -37,13 +24,14 @@ export class BaggagePolicy {
 const BaggagePolicySchema = SchemaFactory.createForClass(BaggagePolicy);
 
 /**
- * One refund step, e.g. { hoursBeforeDeparture: 72, refundPercent: 100 }
- * means "cancel at least 72 hours before departure and get 100% back".
+ * FLT-09: one refund tier, e.g. { daysBeforeDeparture: 7, refundPercent: 100 }
+ * means "cancel 7 or more days before departure and get 100% back".
+ * Thresholds are unique whole numbers >= 0.
  */
 @Schema({ _id: false })
 export class CancellationRule {
   @Prop({ required: true, min: 0 })
-  hoursBeforeDeparture: number;
+  daysBeforeDeparture: number;
 
   @Prop({ required: true, min: 0, max: 100 })
   refundPercent: number;
@@ -52,14 +40,15 @@ const CancellationRuleSchema = SchemaFactory.createForClass(CancellationRule);
 
 @Schema({ _id: false })
 export class CancellationPolicy {
-  /** Sorted from the most hours to the fewest. Cancelling later than the last rule gives 0%. */
+  /** Sorted from the most days to the fewest. If no tier applies the refund is 0%. */
   @Prop({ type: [CancellationRuleSchema], default: [] })
   rules: CancellationRule[];
 
   @Prop({ trim: true, maxlength: 1000 })
   notes?: string;
 }
-const CancellationPolicySchema = SchemaFactory.createForClass(CancellationPolicy);
+const CancellationPolicySchema =
+  SchemaFactory.createForClass(CancellationPolicy);
 
 @Schema({ timestamps: true })
 export class Airline {

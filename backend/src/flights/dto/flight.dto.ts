@@ -21,28 +21,10 @@ const upper = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim().toUpperCase() : value;
 
 const LOCAL_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
-const LOCAL_TIME_MSG = 'must be a local time like 2026-12-01T09:30 (airport local time, no Z)';
+const LOCAL_TIME_MSG =
+  'must be a local time like 2026-12-01T09:30 (airport local time, no Z)';
 
 // ---------- cabins ----------
-
-export class CabinPricesDto {
-  @ApiProperty({ example: 300, description: 'Price for one adult' })
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  adult: number;
-
-  @ApiPropertyOptional({ example: 225, description: 'Defaults to 75% of the adult price' })
-  @IsOptional()
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  child?: number;
-
-  @ApiPropertyOptional({ example: 30, description: 'Defaults to 10% of the adult price' })
-  @IsOptional()
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  infant?: number;
-}
 
 /** POST /api/flights/:id/cabins (FLT-04) */
 export class CreateCabinDto {
@@ -50,16 +32,48 @@ export class CreateCabinDto {
   @IsEnum(CabinClass)
   cabinClass: CabinClass;
 
-  @ApiProperty({ example: 150, minimum: 1, maximum: 1000 })
-  @IsInt()
+  @ApiProperty({
+    example: 150,
+    minimum: 1,
+    maximum: 1000,
+    description: 'Whole number > 0',
+  })
+  @IsInt({ message: 'totalSeats must be a whole number' })
   @Min(1)
   @Max(1000)
   totalSeats: number;
 
-  @ApiProperty({ type: CabinPricesDto })
-  @ValidateNested()
-  @Type(() => CabinPricesDto)
-  prices: CabinPricesDto;
+  @ApiProperty({
+    example: 300,
+    description:
+      'Cabin fare in USD (> 0). Adults and children pay this; infants pay 10%.',
+  })
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01, { message: 'price must be greater than 0' })
+  @Max(100000)
+  price: number;
+
+  @ApiProperty({
+    example: 1,
+    minimum: 0,
+    maximum: 10,
+    description: 'Free bags per passenger',
+  })
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  freeBags: number;
+
+  @ApiProperty({
+    example: 23,
+    minimum: 1,
+    maximum: 100,
+    description: 'Max weight of each bag (kg)',
+  })
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  maxBagWeightKg: number;
 }
 
 /** PATCH /api/flights/:id/cabins/:cabinId (FLT-04, FLT-05) */
@@ -74,11 +88,29 @@ export class UpdateCabinDto {
   @Max(1000)
   totalSeats?: number;
 
-  @ApiPropertyOptional({ type: CabinPricesDto })
+  @ApiPropertyOptional({
+    example: 320,
+    description: 'New fare in USD; existing bookings keep their price',
+  })
   @IsOptional()
-  @ValidateNested()
-  @Type(() => CabinPricesDto)
-  prices?: CabinPricesDto;
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01, { message: 'price must be greater than 0' })
+  @Max(100000)
+  price?: number;
+
+  @ApiPropertyOptional({ example: 2, minimum: 0, maximum: 10 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  freeBags?: number;
+
+  @ApiPropertyOptional({ example: 23, minimum: 1, maximum: 100 })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  maxBagWeightKg?: number;
 }
 
 // ---------- flights ----------
@@ -87,7 +119,8 @@ export class UpdateCabinDto {
 export class CreateFlightDto {
   @ApiPropertyOptional({
     example: '6a0eb842da554c99a192cf0b',
-    description: 'Admins only. Airline moderators always create flights for their own airline.',
+    description:
+      'Admins only. Airline moderators always create flights for their own airline.',
   })
   @IsOptional()
   @IsMongoId()
@@ -95,36 +128,44 @@ export class CreateFlightDto {
 
   @ApiProperty({ example: 'MS777' })
   @Transform(upper)
-  @Matches(/^[A-Z0-9]{2}\d{1,4}[A-Z]?$/, { message: 'flightNumber must look like MS777' })
+  @Matches(/^[A-Z0-9]{2}\d{1,4}[A-Z]?$/, {
+    message: 'flightNumber must look like MS777',
+  })
   flightNumber: string;
 
-  @ApiProperty({ example: 'CAI', description: 'IATA code from GET /api/airports' })
+  @ApiProperty({
+    example: 'CAI',
+    description: 'IATA code from GET /api/airports',
+  })
   @Transform(upper)
   @Matches(/^[A-Z]{3}$/, { message: 'origin must be a 3-letter airport code' })
   origin: string;
 
   @ApiProperty({ example: 'DXB' })
   @Transform(upper)
-  @Matches(/^[A-Z]{3}$/, { message: 'destination must be a 3-letter airport code' })
+  @Matches(/^[A-Z]{3}$/, {
+    message: 'destination must be a 3-letter airport code',
+  })
   destination: string;
 
-  @ApiProperty({ example: '2026-12-01T09:30', description: 'Local time at the departure airport' })
+  @ApiProperty({
+    example: '2026-12-01T09:30',
+    description: 'Local time at the departure airport',
+  })
   @Matches(LOCAL_TIME, { message: `departureLocal ${LOCAL_TIME_MSG}` })
   departureLocal: string;
 
-  @ApiProperty({ example: '2026-12-01T14:45', description: 'Local time at the arrival airport' })
+  @ApiProperty({
+    example: '2026-12-01T14:45',
+    description: 'Local time at the arrival airport',
+  })
   @Matches(LOCAL_TIME, { message: `arrivalLocal ${LOCAL_TIME_MSG}` })
   arrivalLocal: string;
 
-  @ApiPropertyOptional({ example: 'USD', description: 'Defaults to the airline baggage currency' })
-  @IsOptional()
-  @Transform(upper)
-  @Matches(/^[A-Z]{3}$/)
-  currency?: string;
-
   @ApiPropertyOptional({
     type: [CreateCabinDto],
-    description: 'Optional: cabins can also be added later with POST /api/flights/:id/cabins',
+    description:
+      'Optional: cabins can also be added later with POST /api/flights/:id/cabins',
   })
   @IsOptional()
   @ValidateNested({ each: true })
@@ -138,15 +179,23 @@ export class UpdateFlightDto {
   @ApiPropertyOptional({ example: 'MS779' })
   @IsOptional()
   @Transform(upper)
-  @Matches(/^[A-Z0-9]{2}\d{1,4}[A-Z]?$/, { message: 'flightNumber must look like MS777' })
+  @Matches(/^[A-Z0-9]{2}\d{1,4}[A-Z]?$/, {
+    message: 'flightNumber must look like MS777',
+  })
   flightNumber?: string;
 
-  @ApiPropertyOptional({ example: '2026-12-01T10:15', description: 'New local departure time' })
+  @ApiPropertyOptional({
+    example: '2026-12-01T10:15',
+    description: 'New local departure time',
+  })
   @IsOptional()
   @Matches(LOCAL_TIME, { message: `departureLocal ${LOCAL_TIME_MSG}` })
   departureLocal?: string;
 
-  @ApiPropertyOptional({ example: '2026-12-01T15:30', description: 'New local arrival time' })
+  @ApiPropertyOptional({
+    example: '2026-12-01T15:30',
+    description: 'New local arrival time',
+  })
   @IsOptional()
   @Matches(LOCAL_TIME, { message: `arrivalLocal ${LOCAL_TIME_MSG}` })
   arrivalLocal?: string;
@@ -168,7 +217,7 @@ export class MyFlightsQueryDto extends PaginationQueryDto {
   @IsEnum(FlightStatus)
   status?: FlightStatus;
 
-  @ApiPropertyOptional({ example: 'MS777' })
+  @ApiPropertyOptional({ description: 'e.g. MS777' })
   @IsOptional()
   @Transform(upper)
   @IsString()

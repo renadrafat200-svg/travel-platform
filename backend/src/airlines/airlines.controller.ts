@@ -1,6 +1,25 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Res,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import { MAX_IMAGE_BYTES, type UploadedImage } from '../common/utils/image-upload';
 import {
   ApiBadRequestResponse,
+  ApiBody,
+  ApiConsumes,
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
@@ -59,6 +78,52 @@ export class AirlinesController {
   @ApiForbiddenResponse({ description: 'Airline moderators only' })
   findMine(@CurrentUser() user: AuthUser) {
     return this.airlines.findMine(user);
+  }
+
+  @Get('logos/:fileName')
+  @Public()
+  @ApiOperation({ summary: 'An airline logo image (public)' })
+  @ApiOkResponse({ description: 'The JPG or PNG image' })
+  @ApiNotFoundResponse({ description: 'Logo not found' })
+  async logo(@Param('fileName') fileName: string, @Res({ passthrough: true }) res: Response) {
+    const file = await this.airlines.logoFile(fileName);
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return new StreamableFile(file.data);
+  }
+
+  @Post(':id/logo')
+  @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
+  @UseInterceptors(FileInterceptor('logo', { limits: { fileSize: MAX_IMAGE_BYTES } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['logo'],
+      properties: { logo: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiOperation({
+    summary: 'Upload the airline logo: JPG or PNG, max 5 MB, one per airline (FLT-01, GEN-08)',
+    description: 'A new upload replaces the previous logo.',
+  })
+  @ApiOkResponse({ description: '{ logoUrl }' })
+  @ApiForbiddenResponse({ description: 'Not your airline' })
+  uploadLogo(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @UploadedFile() file?: UploadedImage,
+  ) {
+    return this.airlines.uploadLogo(user, id, file);
+  }
+
+  @Delete(':id/logo')
+  @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
+  @ApiOperation({ summary: 'Remove the airline logo' })
+  @ApiOkResponse({ description: '{ logoUrl: null }' })
+  @ApiNotFoundResponse({ description: 'No logo' })
+  removeLogo(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.airlines.removeLogo(user, id);
   }
 
   @Get(':id')

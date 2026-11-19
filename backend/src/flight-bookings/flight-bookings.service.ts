@@ -197,13 +197,14 @@ export class FlightBookingsService {
 
         // Re-price each flight with the extra bags
         const bags = passengers.reduce((sum, p) => sum + p.extraBags, 0);
+        const mostBagsOnePassenger = Math.max(0, ...passengers.map((p) => p.extraBags));
         const legs = [];
         for (const leg of booking.toObject().legs) {
             const baggageAmount = await this.baggageFee(
                 leg.airline,
                 leg.flightNumber,
-                booking.currency,
                 bags,
+                mostBagsOnePassenger,
             );
             legs.push({ ...leg, baggageAmount, amount: round2(leg.fareAmount + baggageAmount) });
         }
@@ -781,12 +782,7 @@ export class FlightBookingsService {
     ): Promise<BookingLeg> {
         const cabin = flight.cabins.id(cabinId)!;
         const fareAmount = round2(types.reduce((sum, t) => sum + cabin.prices[t], 0));
-        const baggageAmount = await this.baggageFee(
-            flight.airline,
-            flight.flightNumber,
-            flight.currency,
-            bags,
-        );
+        const baggageAmount = await this.baggageFee(flight.airline, flight.flightNumber, bags);
         return {
             flight: flight._id,
             airline: flight.airline,
@@ -804,22 +800,26 @@ export class FlightBookingsService {
         };
     }
 
-    /** Price of `bags` extra checked bags on one flight, from the airline's baggage policy (FLT-21) */
+    /**
+     * Price of `bags` extra bags on one flight (FLT-08, FLT-19): the airline's price per extra bag,
+     * in USD. No passenger may add more than the airline's maximum extra bags.
+     */
     private async baggageFee(
         airlineId: Types.ObjectId,
         flightNumber: string,
-        currency: string,
         bags: number,
+        mostBagsOnePassenger = 0,
     ): Promise<number> {
         if (bags === 0) return 0;
-        const { baggagePolicy } = await this.airlines.getPolicies(airlineId.toString());
-        if (baggagePolicy.currency !== currency) {
+        const rules = await this.airlines.baggageRules(airlineId);
+        if (mostBagsOnePassenger > rules.maxExtraBags) {
             throw new BadRequestException(
-                `Extra bags on flight ${flightNumber} are priced in ${baggagePolicy.currency}, ` +
-                `not ${currency}, so they cannot be added online`,
+                rules.maxExtraBags === 0
+                    ? `Extra bags are not sold on flight ${flightNumber}`
+                    : `On flight ${flightNumber} each passenger can add at most ${rules.maxExtraBags} extra bag(s)`,
             );
         }
-        return round2(bags * baggagePolicy.extraBagFee);
+        return round2(bags * rules.extraBagPrice);
     }
 
     /** Loads a flight and checks the user is its airline's moderator (or an admin) */
