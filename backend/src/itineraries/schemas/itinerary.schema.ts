@@ -132,6 +132,22 @@ export class ItineraryDay {
 }
 export const ItineraryDaySchema = SchemaFactory.createForClass(ItineraryDay);
 
+/** ITN-27 (optional): one of the owner's confirmed flight or hotel bookings, attached to the plan */
+@Schema({ _id: true })
+export class AttachedBooking {
+  _id: Types.ObjectId;
+
+  @Prop({ type: String, enum: ['flight', 'hotel'], required: true })
+  bookingType: 'flight' | 'hotel';
+
+  @Prop({ type: Types.ObjectId, required: true })
+  booking: Types.ObjectId;
+
+  @Prop({ required: true })
+  attachedAt: Date;
+}
+export const AttachedBookingSchema = SchemaFactory.createForClass(AttachedBooking);
+
 /** ITN-21: where a clone came from; it credits the original author */
 @Schema({ _id: false })
 export class ClonedFrom {
@@ -202,6 +218,10 @@ export class Itinerary {
   /** Distinct city ids of the days, for search by city (ITN-21) */
   @Prop({ type: [String], default: [], index: true })
   cities: string[];
+
+  /** ITN-27 (optional): the owner's own bookings attached to this plan. Never copied to clones, never shown to others. */
+  @Prop({ type: [AttachedBookingSchema], default: [] })
+  attachedBookings: Types.DocumentArray<AttachedBooking>;
 
   /** ITN-21: set on clones. The clone is independent; this is only the credit. */
   @Prop({ type: ClonedFromSchema })
