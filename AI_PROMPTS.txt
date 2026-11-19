@@ -213,3 +213,20 @@ refund webhooks, notifications). It added FAILED and refundReference to
 flight bookings so they match hotels. I tested the policy gate and the
 webhook flows (confirm, decline, refund) against the running API.
 ================================================
+Date: 2026-11-19
+Student: Youssef Khaled (Member 7)
+Tool: Claude
+Related Requirement: ITN-01, ITN-03, ITN-05, ITN-07, ITN-08, ITN-09, ITN-20
+
+Prompt:
+I am Member 7 (itineraries, budgets and exchange rates). Here is the team
+leader's context with the workbook rules and exact endpoints. Build my part
+on feature branches, starting with itinerary CRUD and days.
+
+How the output was used:
+Claude wrote the itineraries module: create/edit/delete itineraries
+(private by default), my-itineraries list, days with city and notes,
+insert/move/delete with automatic renumbering and dates from the start
+date, city groups, and public/private visibility. I tested every rule
+against a local test database before committing.
+================================================
