@@ -230,3 +230,20 @@ insert/move/delete with automatic renumbering and dates from the start
 date, city groups, and public/private visibility. I tested every rule
 against a local test database before committing.
 ================================================
+Date: 2026-11-19
+Student: Youssef Khaled (Member 7)
+Tool: Claude
+Related Requirement: ITN-10, ITN-12, ITN-14, ITN-16, GEN-08
+
+Prompt:
+Continue my part: activities with images, budget entries per day,
+intercity transport costs and the budget summary.
+
+How the output was used:
+Claude added activities (name, description, optional time and cost),
+activity images stored in MongoDB like the blog (JPG/PNG, 5 MB, max 5),
+budget entries by category and currency, transport costs between cities,
+and a summary by category, day, city group and total. Deleting a day
+removes its transport costs and image files. I tested it against a local
+test database before committing.
+================================================

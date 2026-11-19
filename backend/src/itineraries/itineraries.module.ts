@@ -1,7 +1,14 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { UsersModule } from '../users/users.module';
 import { ItinerariesController } from './itineraries.controller';
 import { ItinerariesService } from './itineraries.service';
+import { ItineraryItemsController } from './itinerary-items.controller';
+import { ItineraryItemsService } from './itinerary-items.service';
+import {
+  ActivityImageFile,
+  ActivityImageFileSchema,
+} from './schemas/activity-image-file.schema';
 import { Itinerary, ItinerarySchema } from './schemas/itinerary.schema';
 
 /**
@@ -13,10 +20,12 @@ import { Itinerary, ItinerarySchema } from './schemas/itinerary.schema';
   imports: [
     MongooseModule.forFeature([
       { name: Itinerary.name, schema: ItinerarySchema },
+      { name: ActivityImageFile.name, schema: ActivityImageFileSchema },
     ]),
+    UsersModule,
   ],
-  controllers: [ItinerariesController],
-  providers: [ItinerariesService],
+  controllers: [ItinerariesController, ItineraryItemsController],
+  providers: [ItinerariesService, ItineraryItemsService],
   exports: [ItinerariesService],
 })
 export class ItinerariesModule {}
