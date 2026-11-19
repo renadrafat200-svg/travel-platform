@@ -8,12 +8,14 @@ export type FlightBookingDocument = HydratedDocument<FlightBooking>;
  * The shared booking life cycle (same words as hotel bookings, so Payments can treat both alike):
  *   pending   -> seats are held (step 1), passenger details added (step 2), waiting for payment
  *   confirmed -> paid; tickets issued
+ *   completed -> paid, and every flight of the trip has departed (moves to "Past")
  *   cancelled -> cancelled by the user, or the airline cancelled the flight
  *   expired   -> not paid in time; seats went back on sale
  */
 export enum BookingStatus {
     PENDING = 'pending',
     CONFIRMED = 'confirmed',
+    COMPLETED = 'completed',
     CANCELLED = 'cancelled',
     EXPIRED = 'expired',
 }
@@ -44,6 +46,10 @@ export class Passenger {
     /** "YYYY-MM-DD" */
     @Prop({ required: true })
     dateOfBirth: string;
+
+    /** Passport or national ID number (FLT-21). Not required in the schema so older bookings stay valid. */
+    @Prop({ trim: true, uppercase: true })
+    passportNumber?: string;
 
     /** Worked out from the date of birth, never sent by the client */
     @Prop({ type: String, enum: PassengerType, required: true })
@@ -166,6 +172,10 @@ export class FlightBooking {
 
     @Prop()
     confirmedAt?: Date;
+
+    /** When the last flight of the trip departed and the booking became "completed" */
+    @Prop()
+    completedAt?: Date;
 
     /** Set by Member 6, e.g. the Stripe PaymentIntent id */
     @Prop()

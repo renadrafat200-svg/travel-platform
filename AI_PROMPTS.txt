@@ -282,3 +282,26 @@ day-1 city, reusing Member 4's hotel search and Member 2's flight search.
 I tested search, hidden/private rules, clone independence, and a real
 round-trip flight search against a local test database.
 ================================================
+Date: 2026-11-20
+Student: Nadeen Yasser (Member 3)
+Tool: Claude
+Related Requirement: FLT-21, FLT-22, FLT-23, FLT-25, FLT-26
+
+Prompt:
+I am Member 3 (flight bookings). Fix what is still missing against the
+workbook: 10-minute seat hold, no 2-hour booking cut-off, passport/ID for
+every passenger, round-trip refund by the outbound flight's tier, a refund
+preview before cancelling, Upcoming/Past/Cancelled groups with a Completed
+status, and the e-ticket as a PDF.
+
+How the output was used:
+Claude changed the hold to 10 minutes, removed the cut-off (only departed
+flights are blocked), added a required passport/ID number per passenger
+(shown on the e-ticket and the CSV passenger list), applied the outbound
+flight's refund tier to the whole booking, added GET
+/api/flight-bookings/:id/cancel-preview, grouped "My bookings" into
+upcoming/past/cancelled with a background job that marks fully departed
+trips "completed", and made GET /:id/e-ticket download a PDF (?format=json
+for JSON). I tested every case against a local test database, including a
+rescheduled flight and a round trip where only the outbound had departed.
+================================================

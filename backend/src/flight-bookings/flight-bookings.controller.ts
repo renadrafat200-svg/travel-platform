@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, Res, StreamableFile } from '@nestjs/common';
 import {
     ApiBadRequestResponse,
     ApiConflictResponse,
@@ -19,10 +19,12 @@ import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import {
     CancelFlightBookingDto,
     CreateFlightBookingDto,
+    ETicketQueryDto,
     FlightBookingsQueryDto,
     HoldFlightDto,
     MyFlightBookingsQueryDto,
 } from './dto/flight-booking.dto';
+import { buildETicketPdf } from './e-ticket.pdf';
 import { FlightBookingsService } from './flight-bookings.service';
 
 /** Endpoints exactly as in section 8.4 of the project description */
@@ -60,8 +62,11 @@ export class FlightBookingsController {
     }
 
     @Get()
-    @ApiOperation({ summary: 'My flight bookings, newest first (FLT-25)' })
-    @ApiOkResponse({ description: 'Paginated list of my bookings' })
+    @ApiOperation({ summary: 'My flight bookings grouped as upcoming, past and cancelled (FLT-25)' })
+    @ApiOkResponse({
+        description:
+            '{ upcoming, past, cancelled }, or one paginated group with ?group=, or a flat list with ?status=',
+    })
     findMine(@CurrentUser() user: AuthUser, @Query() query: MyFlightBookingsQueryDto) {
         return this.bookings.findMine(user, query);
     }
@@ -73,6 +78,20 @@ export class FlightBookingsController {
     @ApiNotFoundResponse({ description: 'Booking not found' })
     findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
         return this.bookings.findOne(user, id);
+    }
+
+    @Get(':id/cancel-preview')
+    @ApiOperation({
+        summary: 'How much would be refunded if I cancel now, without cancelling (FLT-26)',
+    })
+    @ApiOkResponse({
+        description:
+            '{ cancellable, reason?, hoursBeforeDeparture, refundPercent, refundAmount, totalAmount, currency }',
+    })
+    @ApiForbiddenResponse({ description: 'Not your booking' })
+    @ApiNotFoundResponse({ description: 'Booking not found' })
+    cancelPreview(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+        return this.bookings.cancelPreview(user, id);
     }
 
     @Post(':id/cancel')
@@ -92,12 +111,26 @@ export class FlightBookingsController {
     }
 
     @Get(':id/e-ticket')
-    @ApiOperation({ summary: 'E-ticket of a confirmed booking (FLT-23)' })
-    @ApiOkResponse({ description: 'Ticket numbers, passengers and current flight times' })
+    @ApiOperation({ summary: 'Download the e-ticket of a confirmed booking as a PDF (FLT-23)' })
+    @ApiProduces('application/pdf', 'application/json')
+    @ApiOkResponse({
+        description:
+            'PDF file with ticket numbers, passengers (with passport/ID) and current flight times; JSON with ?format=json',
+    })
     @ApiBadRequestResponse({ description: 'Booking is not confirmed' })
     @ApiForbiddenResponse({ description: 'Not your booking' })
-    eTicket(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-        return this.bookings.eTicket(user, id);
+    async eTicket(
+        @CurrentUser() user: AuthUser,
+        @Param('id') id: string,
+        @Query() query: ETicketQueryDto,
+        @Res({ passthrough: true }) res: Response,
+    ) {
+        const ticket = await this.bookings.eTicket(user, id);
+        if (query.format === 'json') return ticket;
+        const pdf = await buildETicketPdf(ticket);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="e-ticket-${ticket.reference}.pdf"`);
+        return new StreamableFile(pdf);
     }
 }
 
