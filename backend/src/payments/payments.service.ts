@@ -200,13 +200,18 @@ export class PaymentsService {
         { returnDocument: 'after' },
       )
       .exec();
-    if (!payment) return;
-    await this.notifications.notify(
+    if (!payment) return; // already failed (and notified) when the card was declined
+    await this.notifyFailed(payment, intent.last_payment_error?.message);
+  }
+
+  /** GEN-01: tell the user their payment did not go through */
+  private notifyFailed(payment: PaymentDocument, reason?: string) {
+    return this.notifications.notify(
       payment.user,
       NotificationType.PAYMENT_FAILED,
       'Payment failed',
       `Your payment of ${payment.amount} ${payment.currency} did not go through` +
-        (intent.last_payment_error?.message ? `: ${intent.last_payment_error.message}` : '.') +
+        (reason ? `: ${reason}` : '.') +
         ' You can try again before the hold expires.',
       { bookingType: payment.bookingType, bookingId: payment.booking.toString(), paymentId: payment._id.toString() },
     );
@@ -302,8 +307,13 @@ export class PaymentsService {
       // Only the status is updated here. The booking is confirmed by the webhook, never here.
       const status = this.statusOf(intent);
       if (status !== payment.status) {
+        const wasPending = payment.status === PaymentStatus.PENDING;
         payment.status = status;
         await payment.save();
+        // GEN-01: a declined card. The later payment_failed webhook will not notify again.
+        if (wasPending && status === PaymentStatus.FAILED) {
+          await this.notifyFailed(payment, intent.last_payment_error?.message ?? lastError);
+        }
       }
     }
     return {
