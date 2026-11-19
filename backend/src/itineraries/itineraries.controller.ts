@@ -32,7 +32,13 @@ import {
   UpdateDayDto,
   UpdateItineraryDto,
 } from './dto/itinerary.dto';
+import {
+  CreateActivityDto,
+  CreateBudgetDto,
+  CreateTransportCostDto,
+} from './dto/itinerary-items.dto';
 import { ItinerariesService } from './itineraries.service';
+import { ItineraryItemsService } from './itinerary-items.service';
 
 /**
  * Itineraries (Member 7). Paths are exactly the ones in the project PDF.
@@ -43,7 +49,10 @@ import { ItinerariesService } from './itineraries.service';
 @ApiUnauthorizedResponse({ description: 'Not logged in' })
 @Controller('itineraries')
 export class ItinerariesController {
-  constructor(private readonly itineraries: ItinerariesService) {}
+  constructor(
+    private readonly itineraries: ItinerariesService,
+    private readonly items: ItineraryItemsService,
+  ) {}
 
   // ---------------- Itinerary ----------------
 
@@ -176,5 +185,70 @@ export class ItinerariesController {
     @Param('dayId') dayId: string,
   ) {
     return this.itineraries.removeDay(user, id, dayId);
+  }
+
+  // ---------------- Activities, budgets, transport (edit/delete: /api/activities, /api/budgets, /api/transport-costs) ----------------
+
+  @Post(':id/days/:dayId/activities')
+  @ApiOperation({
+    summary:
+      'Add an activity to a day: name, description, optional time and optional cost (ITN-10)',
+    description:
+      'A cost without a currency uses your preferred currency. Costs count under the "activities" budget category.',
+  })
+  @ApiCreatedResponse({ description: 'The updated itinerary' })
+  @ApiBadRequestResponse({ description: 'Missing name, bad time, negative cost or unsupported currency' })
+  @ApiNotFoundResponse({ description: 'Itinerary or day not found' })
+  addActivity(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('dayId') dayId: string,
+    @Body() dto: CreateActivityDto,
+  ) {
+    return this.items.addActivity(user, id, dayId, dto);
+  }
+
+  @Post(':id/days/:dayId/budgets')
+  @ApiOperation({
+    summary:
+      'Add a budget entry to a day: food, accommodation, in-city transport or activities, in any supported currency (ITN-14)',
+  })
+  @ApiCreatedResponse({ description: 'The updated itinerary' })
+  @ApiBadRequestResponse({ description: 'Negative amount, unknown category or unsupported currency' })
+  @ApiNotFoundResponse({ description: 'Itinerary or day not found' })
+  addBudget(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('dayId') dayId: string,
+    @Body() dto: CreateBudgetDto,
+  ) {
+    return this.items.addBudget(user, id, dayId, dto);
+  }
+
+  @Post(':id/transport-costs')
+  @ApiOperation({
+    summary:
+      'Add an intercity transport cost: mode, from-city, to-city, amount, currency and the day it counts on (ITN-16)',
+  })
+  @ApiCreatedResponse({ description: 'The updated itinerary' })
+  @ApiBadRequestResponse({ description: 'Unknown city, negative amount or unsupported currency' })
+  @ApiNotFoundResponse({ description: 'Itinerary or day not found' })
+  addTransport(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: CreateTransportCostDto,
+  ) {
+    return this.items.addTransport(user, id, dto);
+  }
+
+  @Get(':id/budget-summary')
+  @ApiOperation({
+    summary:
+      'Budget totals by category, by day, by city group and overall (ITN-14). Includes activity costs and transport (ITN-16)',
+  })
+  @ApiOkResponse({ description: 'The budget summary' })
+  @ApiNotFoundResponse({ description: 'Not found or not yours' })
+  budgetSummary(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.items.budgetSummary(user, id);
   }
 }

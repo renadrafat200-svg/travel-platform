@@ -8,6 +8,44 @@ export const MAX_COUNTRIES = 20;
 export const MAX_DAYS = 60;
 export const DAY_NOTES_MAX_LENGTH = 2000;
 
+/** ITN-10: activities */
+export const ACTIVITY_NAME_MAX_LENGTH = 100;
+export const ACTIVITY_DESCRIPTION_MAX_LENGTH = 1000;
+/** ITN-12 + GEN-08: up to 5 images per activity (JPG/PNG, 5 MB each) */
+export const MAX_ACTIVITY_IMAGES = 5;
+export const NOTE_MAX_LENGTH = 200;
+/** Upper limit for any single amount, so typos like 1e12 are rejected */
+export const MAX_AMOUNT = 1_000_000_000;
+export const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+export const CURRENCY_REGEX = /^[A-Z]{3}$/;
+
+/** ITN-14: budget categories of a day. Activity costs count as "activities". */
+export enum BudgetCategory {
+  FOOD = 'food',
+  ACCOMMODATION = 'accommodation',
+  IN_CITY_TRANSPORT = 'in_city_transport',
+  ACTIVITIES = 'activities',
+}
+
+/** ITN-16: intercity transport entries have their own category in the totals */
+export const INTERCITY_TRANSPORT = 'intercity_transport';
+export const SUMMARY_CATEGORIES = [
+  ...Object.values(BudgetCategory),
+  INTERCITY_TRANSPORT,
+] as const;
+export type SummaryCategory = (typeof SUMMARY_CATEGORIES)[number];
+
+/** ITN-16: how the traveller goes from one city to the next */
+export enum TransportMode {
+  FLIGHT = 'flight',
+  TRAIN = 'train',
+  BUS = 'bus',
+  CAR = 'car',
+  FERRY = 'ferry',
+  TAXI = 'taxi',
+  OTHER = 'other',
+}
+
 export enum Visibility {
   PUBLIC = 'public',
   PRIVATE = 'private',

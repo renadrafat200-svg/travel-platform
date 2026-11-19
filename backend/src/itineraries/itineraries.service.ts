@@ -25,6 +25,7 @@ import {
   toDateString,
   Visibility,
 } from './itinerary.constants';
+import { ActivityImageFile } from './schemas/activity-image-file.schema';
 import { Itinerary, ItineraryDocument } from './schemas/itinerary.schema';
 
 /** A run of consecutive days in the same city (ITN-09) */
@@ -49,6 +50,8 @@ export class ItinerariesService {
   constructor(
     @InjectModel(Itinerary.name)
     private readonly itineraryModel: Model<Itinerary>,
+    @InjectModel(ActivityImageFile.name)
+    private readonly imageFileModel: Model<ActivityImageFile>,
     private readonly reference: ReferenceDataService,
   ) {}
 
@@ -114,6 +117,7 @@ export class ItinerariesService {
   async remove(user: AuthUser, id: string) {
     const itinerary = await this.getOwned(user, id);
     await this.itineraryModel.deleteOne({ _id: itinerary._id }).exec();
+    await this.imageFileModel.deleteMany({ itinerary: itinerary._id }).exec();
   }
 
   // =====================================================================================
@@ -158,12 +162,22 @@ export class ItinerariesService {
     return this.toDetail(itinerary);
   }
 
-  /** ITN-07: the remaining days are renumbered and their dates recalculated */
+  /**
+   * ITN-07: the remaining days are renumbered and their dates and budget totals recalculated.
+   * The day's activities, budget entries and the transport costs counted on it go with it.
+   */
   async removeDay(user: AuthUser, id: string, dayId: string) {
     const itinerary = await this.getOwned(user, id);
     const day = this.findDay(itinerary, dayId);
+    const activityIds = day.activities.map((a) => a._id);
     itinerary.days.pull(day._id);
+    for (const t of itinerary.transportCosts.filter((t) => t.day.equals(day._id))) {
+      itinerary.transportCosts.pull(t._id);
+    }
     await this.save(itinerary);
+    if (activityIds.length) {
+      await this.imageFileModel.deleteMany({ activity: { $in: activityIds } }).exec();
+    }
     return this.toDetail(itinerary);
   }
 
@@ -204,9 +218,13 @@ export class ItinerariesService {
     };
   }
 
-  /** Full itinerary: days with their number and date, plus the city groups */
+  /**
+   * Full itinerary: days with their number, date, activities and budget entries,
+   * the intercity transport costs and the city groups
+   */
   async toDetail(doc: ItineraryDocument) {
     const names = await this.cityNames();
+    const dayNumber = new Map(doc.days.map((d, i) => [d._id.toString(), i + 1]));
     const days = doc.days.map((day, i) => ({
       id: day._id.toString(),
       dayNumber: i + 1,
@@ -214,6 +232,36 @@ export class ItinerariesService {
       city: day.city,
       cityName: names.get(day.city) ?? day.city,
       notes: day.notes,
+      // ITN-10: timed activities first, in time order; untimed ones after, as added
+      activities: [...day.activities]
+        .sort((a, b) => (a.time ?? '99:99').localeCompare(b.time ?? '99:99'))
+        .map((a) => ({
+          id: a._id.toString(),
+          name: a.name,
+          description: a.description,
+          time: a.time ?? null,
+          cost: a.cost ?? null,
+          currency: a.currency ?? null,
+          images: a.images.map((img) => ({ id: img._id.toString(), url: img.url })),
+        })),
+      budgets: day.budgets.map((b) => ({
+        id: b._id.toString(),
+        category: b.category,
+        amount: b.amount,
+        currency: b.currency,
+        note: b.note,
+      })),
+    }));
+    const transportCosts = doc.transportCosts.map((t) => ({
+      id: t._id.toString(),
+      mode: t.mode,
+      fromCity: t.fromCity,
+      toCity: t.toCity,
+      amount: t.amount,
+      currency: t.currency,
+      dayId: t.day.toString(),
+      dayNumber: dayNumber.get(t.day.toString()) ?? null,
+      note: t.note,
     }));
     return {
       id: doc._id.toString(),
@@ -226,6 +274,7 @@ export class ItinerariesService {
       visibility: doc.isPublic ? Visibility.PUBLIC : Visibility.PRIVATE,
       isHidden: doc.isHidden,
       days,
+      transportCosts,
       groups: this.cityGroups(doc, names),
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
@@ -270,7 +319,11 @@ export class ItinerariesService {
    * Loads an itinerary the current user may change: the owner or an admin.
    * A public itinerary of someone else is read-only (403); a private one does not exist for them (404).
    */
-  async getOwned(user: AuthUser, id: string): Promise<ItineraryDocument> {
+  async getOwned(
+    user: AuthUser,
+    id: string,
+    label = 'Itinerary',
+  ): Promise<ItineraryDocument> {
     const itinerary = await this.findById(id);
     if (this.isOwnerOrAdmin(user, itinerary)) return itinerary;
     if (itinerary.isPublic && !itinerary.isHidden) {
@@ -278,7 +331,7 @@ export class ItinerariesService {
         'This itinerary belongs to another user and is read-only. View it with GET /api/itineraries/public/{id} or clone it to make changes.',
       );
     }
-    throw new NotFoundException('Itinerary not found');
+    throw new NotFoundException(`${label} not found`);
   }
 
   async findById(id: string): Promise<ItineraryDocument> {
