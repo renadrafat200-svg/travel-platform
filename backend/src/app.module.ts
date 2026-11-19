@@ -12,6 +12,7 @@ import { FlightBookingsModule } from './flight-bookings/flight-bookings.module';
 import { FlightsModule } from './flights/flights.module';
 import { HotelBookingsModule } from './hotel-bookings/hotel-bookings.module';
 import { HotelsModule } from './hotels/hotels.module';
+import { ItinerariesModule } from './itineraries/itineraries.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentsModule } from './payments/payments.module';
 import { validateEnv } from './config/env.validation';
@@ -55,6 +56,7 @@ import { UsersModule } from './users/users.module';
     ReviewsModule,
     BlogModule,
     PaymentsModule, // PAY-01..04 (Member 6)
+    ItinerariesModule, // ITN-01..26 (Member 7)
   ],
   controllers: [AppController],
 })
