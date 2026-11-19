@@ -11,6 +11,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, QueryFilter, Types } from 'mongoose';
 import { AirlinesService } from '../airlines/airlines.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/schemas/notification.schema';
 import { paginate } from '../common/dto/pagination-query.dto';
 import { ProviderType, Role } from '../common/enums/role.enum';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
@@ -61,6 +63,7 @@ export class FlightsService implements OnModuleInit {
     private readonly airlines: AirlinesService,
     private readonly reference: ReferenceDataService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** FLT-03: an airline moderator (or an admin) creates a flight */
@@ -236,7 +239,14 @@ export class FlightsService implements OnModuleInit {
       targetId: flight._id,
       details: { before, changes: dto },
     });
-    // TODO (Member 6): notify passengers with bookings on this flight about the schedule change.
+    if (dto.departureLocal || dto.arrivalLocal || dto.flightNumber) {
+      await this.notifications.notifyFlightPassengers(
+        flight._id,
+        NotificationType.FLIGHT_SCHEDULE_CHANGED,
+        'Flight schedule changed',
+        `Flight ${flight.flightNumber} (${flight.origin}-${flight.destination}) has a new schedule. Check your e-ticket for the new times.`,
+      );
+    }
     return this.fullView(flight);
   }
 

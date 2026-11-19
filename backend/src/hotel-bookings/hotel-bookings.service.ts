@@ -38,6 +38,8 @@ import {
 } from '../hotels/stay-dates.util';
 import { utcToLocal } from '../flights/time-zone.util';
 import { UsersService } from '../users/users.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/schemas/notification.schema';
 import {
   CancelHotelBookingDto,
   CreateHotelBookingDto,
@@ -103,6 +105,7 @@ export class HotelBookingsService {
     private readonly inventory: RoomInventoryService,
     private readonly users: UsersService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // =====================================================================================
@@ -397,8 +400,17 @@ export class HotelBookingsService {
           ? HotelRefundStatus.PENDING
           : HotelRefundStatus.NONE,
     });
-    // TODO (Member 6): create the Stripe refund for refundAmount, then call markRefunded(id, refundId).
-    // TODO (Member 6): NotificationsService.notify(user, 'booking.cancelled', ...)
+    // PAY-03: the Stripe refund is issued by PaymentsService (Member 6), which picks up refundStatus "pending".
+    await this.notifications.notify(
+      updated.user,
+      NotificationType.BOOKING_CANCELLED,
+      'Hotel reservation cancelled',
+      `Your reservation ${updated.reference} at ${updated.hotelName} was cancelled.` +
+        (quote.refundAmount > 0
+          ? ` A refund of ${quote.refundAmount} ${updated.currency} is being processed.`
+          : " No refund is due under the hotel's policy."),
+      { bookingType: 'hotel', bookingId: updated._id.toString(), reference: updated.reference },
+    );
     return this.toView(updated);
   }
 
@@ -446,7 +458,14 @@ export class HotelBookingsService {
         reference: booking.reference,
       },
     });
-    // TODO (Member 6): refund in full and notify the guest.
+    // PAY-03: refunded in full by PaymentsService (refundStatus "pending").
+    await this.notifications.notify(
+      updated.user,
+      NotificationType.BOOKING_CANCELLED,
+      'Reservation cancelled by the hotel',
+      `${updated.hotelName} cancelled your reservation ${updated.reference}. You will get a full refund of ${updated.totalAmount} ${updated.currency}.`,
+      { bookingType: 'hotel', bookingId: updated._id.toString(), reference: updated.reference },
+    );
     return this.toView(updated);
   }
 
@@ -560,7 +579,13 @@ export class HotelBookingsService {
       throw new ConflictException(
         'The room hold expired, so the reservation cannot be confirmed',
       );
-    // TODO (Member 6): NotificationsService.notify(user, 'booking.confirmed', ...)
+    await this.notifications.notify(
+      confirmed.user,
+      NotificationType.BOOKING_CONFIRMED,
+      'Hotel reservation confirmed',
+      `Your payment was received and reservation ${confirmed.reference} at ${confirmed.hotelName} is confirmed.`,
+      { bookingType: 'hotel', bookingId: confirmed._id.toString(), reference: confirmed.reference },
+    );
     return this.toView(confirmed);
   }
 
