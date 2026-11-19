@@ -76,13 +76,11 @@ export class PaymentsService {
       .sort({ createdAt: -1 })
       .exec();
     if (open) {
-      const intent = await this.stripeService.call(() =>
-        this.stripeService.stripe.paymentIntents.retrieve(open.stripePaymentId),
-      );
-      if (this.isOpen(intent) && intent.amount === toCents(chargeable.amount)) {
+      const intent = await this.retrieveOrForget(open);
+      if (intent && this.isOpen(intent) && intent.amount === toCents(chargeable.amount)) {
         return this.startView(open, intent, dto.testPaymentMethod);
       }
-      await this.cancelIntent(open, PaymentStatus.CANCELLED);
+      if (intent) await this.cancelIntent(open, PaymentStatus.CANCELLED);
     }
     return this.newAttempt(user, chargeable, dto.testPaymentMethod);
   }
@@ -327,7 +325,8 @@ export class PaymentsService {
   /** Cancels the PaymentIntent on Stripe if it can still be cancelled. Returns true if the record changed. */
   private async cancelIntent(payment: PaymentDocument, status: PaymentStatus): Promise<boolean> {
     const stripe = this.stripeService.stripe;
-    let intent = await stripe.paymentIntents.retrieve(payment.stripePaymentId);
+    let intent = await this.retrieveOrForget(payment);
+    if (!intent) return true; // unknown to this Stripe account: already marked cancelled
     if (this.isOpen(intent)) {
       try {
         intent = await stripe.paymentIntents.cancel(intent.id);
@@ -342,6 +341,28 @@ export class PaymentsService {
       .exec();
     payment.status = next;
     return res.modifiedCount > 0;
+  }
+
+  /**
+   * Looks up the payment's PaymentIntent on Stripe. The team shares one database but each laptop
+   * can use its own Stripe test account, so a payment made on another laptop is unknown here
+   * ("No such payment_intent"). Such a payment can never be completed from this account, so it is
+   * marked cancelled once (instead of failing every minute) and null is returned.
+   */
+  private async retrieveOrForget(payment: PaymentDocument): Promise<Stripe.PaymentIntent | null> {
+    try {
+      return await this.stripeService.stripe.paymentIntents.retrieve(payment.stripePaymentId);
+    } catch (err) {
+      if ((err as { code?: string }).code !== 'resource_missing') throw err;
+      this.logger.warn(
+        `PaymentIntent ${payment.stripePaymentId} does not exist in this Stripe account; marking the payment cancelled`,
+      );
+      await this.paymentModel
+        .updateOne({ _id: payment._id }, { $set: { status: PaymentStatus.CANCELLED } })
+        .exec();
+      payment.status = PaymentStatus.CANCELLED;
+      return null;
+    }
   }
 
   private isOpen(intent: Stripe.PaymentIntent) {
