@@ -13,6 +13,7 @@ import { FlightsModule } from './flights/flights.module';
 import { HotelBookingsModule } from './hotel-bookings/hotel-bookings.module';
 import { HotelsModule } from './hotels/hotels.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { PaymentsModule } from './payments/payments.module';
 import { validateEnv } from './config/env.validation';
 import { ReferenceDataModule } from './reference-data/reference-data.module';
 import { ReportsModule } from './reports/reports.module';
@@ -53,6 +54,7 @@ import { UsersModule } from './users/users.module';
     HotelBookingsModule,
     ReviewsModule,
     BlogModule,
+    PaymentsModule, // PAY-01..04 (Member 6)
   ],
   controllers: [AppController],
 })
