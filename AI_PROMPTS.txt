@@ -247,3 +247,20 @@ and a summary by category, day, city group and total. Deleting a day
 removes its transport costs and image files. I tested it against a local
 test database before committing.
 ================================================
+Date: 2026-11-19
+Student: Youssef Khaled (Member 7)
+Tool: Claude
+Related Requirement: ITN-18, ITN-09, ITN-14
+
+Prompt:
+Add exchange rates: fetch from FXRatesAPI once per day, cache them in the
+database, convert every itinerary budget amount to the user's preferred
+currency and handle invalid currencies, missing rates and API failures.
+
+How the output was used:
+Claude added the exchange-rates module (daily cron + fetch on startup,
+cached in the exchangerates collection, last cached rates used when the API
+is down) and converted the budget summary, day totals and city-group
+subtotals with the rate date shown. I tested real rates, invalid codes,
+the API being down, and no cached rates at all.
+================================================

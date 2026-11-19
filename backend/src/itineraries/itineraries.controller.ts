@@ -19,6 +19,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -33,6 +34,7 @@ import {
   UpdateItineraryDto,
 } from './dto/itinerary.dto';
 import {
+  BudgetSummaryQueryDto,
   CreateActivityDto,
   CreateBudgetDto,
   CreateTransportCostDto,
@@ -244,11 +246,24 @@ export class ItinerariesController {
   @Get(':id/budget-summary')
   @ApiOperation({
     summary:
-      'Budget totals by category, by day, by city group and overall (ITN-14). Includes activity costs and transport (ITN-16)',
+      'Budget totals by category, by day, by city group and overall, converted to one currency (ITN-14, ITN-16, ITN-18)',
+    description:
+      'Every amount (budget entries, activity costs, transport) is converted with the cached daily exchange rates; rateDate shows their date. If FXRatesAPI is down, the last cached rates are used. Booking prices are not converted (PAY-04).',
   })
-  @ApiOkResponse({ description: 'The budget summary' })
+  @ApiOkResponse({
+    description:
+      '{ currency, rateDate, byCategory, byDay, byGroup, total, originalAmounts }',
+  })
+  @ApiBadRequestResponse({ description: 'Invalid or unsupported currency code' })
   @ApiNotFoundResponse({ description: 'Not found or not yours' })
-  budgetSummary(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.items.budgetSummary(user, id);
+  @ApiServiceUnavailableResponse({
+    description: 'No exchange rates available (none cached and the API is down)',
+  })
+  budgetSummary(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Query() query: BudgetSummaryQueryDto,
+  ) {
+    return this.items.budgetSummary(user, id, query.currency);
   }
 }
