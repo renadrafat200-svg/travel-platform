@@ -121,7 +121,7 @@ export class PoliciesService {
         iataCode: a.iataCode,
         cancellationPolicy: {
           rules: (a.cancellationPolicy?.rules ?? []).map((r) => ({
-            hoursBeforeDeparture: r.hoursBeforeDeparture,
+            daysBeforeDeparture: r.daysBeforeDeparture,
             refundPercent: r.refundPercent,
           })),
           notes: a.cancellationPolicy?.notes,
