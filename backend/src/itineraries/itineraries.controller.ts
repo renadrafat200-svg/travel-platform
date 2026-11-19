@@ -24,6 +24,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import {
@@ -39,8 +40,15 @@ import {
   CreateBudgetDto,
   CreateTransportCostDto,
 } from './dto/itinerary-items.dto';
+import {
+  ItineraryFlightsQueryDto,
+  ItineraryHotelsQueryDto,
+  PublicSearchQueryDto,
+  PublicViewQueryDto,
+} from './dto/itinerary-public.dto';
 import { ItinerariesService } from './itineraries.service';
 import { ItineraryItemsService } from './itinerary-items.service';
+import { ItineraryPublicService } from './itinerary-public.service';
 
 /**
  * Itineraries (Member 7). Paths are exactly the ones in the project PDF.
@@ -54,7 +62,39 @@ export class ItinerariesController {
   constructor(
     private readonly itineraries: ItinerariesService,
     private readonly items: ItineraryItemsService,
+    private readonly shared: ItineraryPublicService,
   ) {}
+
+  // ---------------- Public itineraries (must stay above ':id' routes) ----------------
+
+  @Public()
+  @Get('public/search')
+  @ApiOperation({
+    summary:
+      'Search public itineraries by keyword (title, country or city), duration and country or city. Guests allowed (ITN-20, ITN-21)',
+  })
+  @ApiOkResponse({ description: 'Paginated public itineraries with their author' })
+  @ApiBadRequestResponse({ description: 'minDays greater than maxDays' })
+  search(@Query() query: PublicSearchQueryDto) {
+    return this.shared.search(query);
+  }
+
+  @Public()
+  @Get('public/:id')
+  @ApiOperation({
+    summary:
+      'View a public itinerary read-only: author, days, activities and budget. Guests allowed (ITN-21)',
+  })
+  @ApiOkResponse({ description: 'The itinerary, its author and readOnly' })
+  @ApiBadRequestResponse({ description: 'Invalid or unsupported currency' })
+  @ApiNotFoundResponse({ description: 'Not found, private or hidden' })
+  viewPublic(
+    @CurrentUser() user: AuthUser | undefined,
+    @Param('id') id: string,
+    @Query() query: PublicViewQueryDto,
+  ) {
+    return this.shared.view(user, id, query.currency);
+  }
 
   // ---------------- Itinerary ----------------
 
@@ -265,5 +305,56 @@ export class ItinerariesController {
     @Query() query: BudgetSummaryQueryDto,
   ) {
     return this.items.budgetSummary(user, id, query.currency);
+  }
+
+  // ---------------- Clone, hotels and flights ----------------
+
+  @Post(':id/clone')
+  @ApiOperation({
+    summary:
+      'Clone a public itinerary into a new private one of mine, with all days, activities and budgets (ITN-21)',
+    description:
+      'The clone credits the original author (clonedFrom) and is fully independent: later changes or deletion of either side do not affect the other.',
+  })
+  @ApiCreatedResponse({ description: 'The new private itinerary' })
+  @ApiNotFoundResponse({ description: 'Not found, private or hidden' })
+  clone(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.shared.clone(user, id);
+  }
+
+  @Get(':id/hotels')
+  @ApiOperation({
+    summary:
+      "Hotels for a city group: check-in = the group's first day, check-out = the day after its last day (ITN-25)",
+    description:
+      'Pick the group with groupIndex (groupNumber in the itinerary) or with any dayId of the group. Uses hotel search (HTL-11).',
+  })
+  @ApiOkResponse({ description: '{ group, checkIn, checkOut, guests, rooms, hotels }' })
+  @ApiBadRequestResponse({ description: 'No days yet, groupIndex out of range or invalid guests/rooms' })
+  @ApiNotFoundResponse({ description: 'Itinerary or day not found' })
+  hotels(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Query() query: ItineraryHotelsQueryDto,
+  ) {
+    return this.shared.hotels(user, id, query);
+  }
+
+  @Get(':id/flights')
+  @ApiOperation({
+    summary:
+      'Flights from an origin airport to any airport in the city of day 1, one-way or round trip (ITN-26)',
+    description:
+      "departureDate defaults to the start date and returnDate to the last day's date. Uses flight search (FLT-11, FLT-12).",
+  })
+  @ApiOkResponse({ description: '{ tripType, from, destinationCity, departureDate, returnDate, results[] }' })
+  @ApiBadRequestResponse({ description: 'No days yet, unknown airport or invalid dates' })
+  @ApiNotFoundResponse({ description: 'Itinerary not found, or no airport in that city' })
+  flights(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Query() query: ItineraryFlightsQueryDto,
+  ) {
+    return this.shared.flights(user, id, query);
   }
 }

@@ -18,6 +18,7 @@ import { Flight, FlightSchema } from './schemas/flight.schema';
   ],
   controllers: [FlightsController],
   providers: [FlightsService, FlightSearchService],
-  exports: [FlightsService, MongooseModule],
+  // FlightSearchService: Member 7 reuses flight search for itineraries (ITN-26)
+  exports: [FlightsService, FlightSearchService, MongooseModule],
 })
 export class FlightsModule {}

@@ -264,3 +264,21 @@ is down) and converted the budget summary, day totals and city-group
 subtotals with the rate date shown. I tested real rates, invalid codes,
 the API being down, and no cached rates at all.
 ================================================
+Date: 2026-11-19
+Student: Youssef Khaled (Member 7)
+Tool: Claude
+Related Requirement: ITN-20, ITN-21, ITN-25, ITN-26
+
+Prompt:
+Finish my part: public itinerary search and read-only view, cloning, and
+hotel and flight search from an itinerary.
+
+How the output was used:
+Claude added public search (keyword on title/country/city, duration,
+country and city filters), the read-only public view with author and
+budget, cloning into an independent private copy that credits the author
+(images copied too), hotels for a city group's dates and flights to the
+day-1 city, reusing Member 4's hotel search and Member 2's flight search.
+I tested search, hidden/private rules, clone independence, and a real
+round-trip flight search against a local test database.
+================================================

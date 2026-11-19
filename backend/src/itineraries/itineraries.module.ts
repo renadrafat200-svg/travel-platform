@@ -1,11 +1,14 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ExchangeRatesModule } from '../exchange-rates/exchange-rates.module';
+import { FlightsModule } from '../flights/flights.module';
+import { HotelsModule } from '../hotels/hotels.module';
 import { UsersModule } from '../users/users.module';
 import { ItinerariesController } from './itineraries.controller';
 import { ItinerariesService } from './itineraries.service';
 import { ItineraryItemsController } from './itinerary-items.controller';
 import { ItineraryItemsService } from './itinerary-items.service';
+import { ItineraryPublicService } from './itinerary-public.service';
 import {
   ActivityImageFile,
   ActivityImageFileSchema,
@@ -25,9 +28,11 @@ import { Itinerary, ItinerarySchema } from './schemas/itinerary.schema';
     ]),
     UsersModule,
     ExchangeRatesModule,
+    HotelsModule, // HotelSearchService (ITN-25)
+    FlightsModule, // FlightSearchService (ITN-26)
   ],
   controllers: [ItinerariesController, ItineraryItemsController],
-  providers: [ItinerariesService, ItineraryItemsService],
+  providers: [ItinerariesService, ItineraryItemsService, ItineraryPublicService],
   exports: [ItinerariesService],
 })
 export class ItinerariesModule {}
