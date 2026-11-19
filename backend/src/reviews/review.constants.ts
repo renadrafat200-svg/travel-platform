@@ -4,3 +4,6 @@ export const MAX_RATING = 5;
 
 /** HTL-23: the optional review text is at most 1000 characters */
 export const REVIEW_COMMENT_MAX_LENGTH = 1000;
+
+/** HTL-26 (optional): the hotel's public reply to a review */
+export const REPLY_MAX_LENGTH = 1000;

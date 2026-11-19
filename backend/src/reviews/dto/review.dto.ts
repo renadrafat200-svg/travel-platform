@@ -2,6 +2,7 @@ import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Max,
@@ -12,6 +13,7 @@ import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import {
   MAX_RATING,
   MIN_RATING,
+  REPLY_MAX_LENGTH,
   REVIEW_COMMENT_MAX_LENGTH,
 } from '../review.constants';
 
@@ -62,6 +64,21 @@ export class UpdateReviewDto {
     message: `The review can be at most ${REVIEW_COMMENT_MAX_LENGTH} characters`,
   })
   comment?: string;
+}
+
+/** HTL-26 (optional): POST / PATCH /api/reviews/:id/reply */
+export class ReviewReplyDto {
+  @ApiProperty({
+    maxLength: REPLY_MAX_LENGTH,
+    example: 'Thank you for staying with us! We are glad you enjoyed the view.',
+  })
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty({ message: 'The reply cannot be empty' })
+  @MaxLength(REPLY_MAX_LENGTH, {
+    message: `The reply can be at most ${REPLY_MAX_LENGTH} characters`,
+  })
+  text: string;
 }
 
 /** HTL-24: page through a hotel's reviews (always newest first) */
