@@ -5,7 +5,6 @@ import { BookingStatus } from '../flight-bookings/schemas/flight-booking.schema'
 import { HotelBookingsService } from '../hotel-bookings/hotel-bookings.service';
 import { HotelBookingStatus } from '../hotel-bookings/schemas/hotel-booking.schema';
 import {
-  AdminBookingStatus,
   AdminBookingsQueryDto,
   AdminBookingType,
 } from './dto/admin-bookings-query.dto';
