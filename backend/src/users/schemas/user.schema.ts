@@ -9,6 +9,10 @@ export class UserPreferences {
   /** ISO 4217 code used for itinerary budget totals, e.g. EGP, USD, EUR */
   @Prop({ default: 'USD', uppercase: true, trim: true })
   currency: string;
+
+  /** Optional bonus: also send in-app notifications by email (on by default) */
+  @Prop({ default: true })
+  emailNotifications: boolean;
 }
 const UserPreferencesSchema = SchemaFactory.createForClass(UserPreferences);
 
@@ -22,6 +26,13 @@ export class User {
   /** bcrypt hash. select:false means it is never returned unless explicitly asked for */
   @Prop({ required: true, select: false })
   passwordHash: string;
+
+  /** ACC-02 (optional): set when the user opens the link in the confirmation email */
+  @Prop({ default: false })
+  emailVerified: boolean;
+
+  @Prop()
+  emailVerifiedAt?: Date;
 
   @Prop({ required: true, trim: true })
   firstName: string;

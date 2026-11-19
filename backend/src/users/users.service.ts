@@ -56,6 +56,13 @@ export class UsersService {
     return this.userModel.findById(id).select('+passwordHash').exec();
   }
 
+  /** ACC-02 (optional) */
+  async markEmailVerified(email: string): Promise<void> {
+    await this.userModel
+      .updateOne({ email: email.toLowerCase().trim() }, { $set: { emailVerified: true, emailVerifiedAt: new Date() } })
+      .exec();
+  }
+
   async emailExists(email: string): Promise<boolean> {
     return !!(await this.userModel.exists({ email: email.toLowerCase().trim() }));
   }
@@ -139,6 +146,9 @@ export class UsersService {
       }
       update['preferences.currency'] = currency;
     }
+    if (preferences?.emailNotifications !== undefined) {
+      update['preferences.emailNotifications'] = preferences.emailNotifications;
+    }
 
     const res = await this.userModel
       .updateOne({ _id: userId }, { $set: update }, { runValidators: true })
@@ -200,7 +210,11 @@ export class UsersService {
       phone: user.phone,
       nationality: user.nationality,
       dateOfBirth: user.dateOfBirth,
-      preferences: { currency: user.preferences?.currency ?? 'USD' },
+      preferences: {
+        currency: user.preferences?.currency ?? 'USD',
+        emailNotifications: user.preferences?.emailNotifications ?? true,
+      },
+      emailVerified: user.emailVerified ?? false,
       role: user.role,
       status: user.status,
       mustChangePassword: user.mustChangePassword ?? false,

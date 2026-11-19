@@ -40,6 +40,8 @@ export class AdminSeederService implements OnApplicationBootstrap {
       lastName: 'Admin',
       role: Role.ADMIN,
     });
+    // ACC-02 (optional): the seeded admin's address counts as confirmed
+    await this.users.markEmailVerified(email);
     this.logger.log(`Seeded admin account ${email}`);
   }
 }

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, QueryFilter, Types } from 'mongoose';
 import { paginate } from '../common/dto/pagination-query.dto';
+import { MailService } from '../mail/mail.service';
 import { NotificationsQueryDto } from './dto/notifications-query.dto';
 import { Notification, NotificationDocument, NotificationType } from './schemas/notification.schema';
 
@@ -21,7 +22,39 @@ export class NotificationsService {
   constructor(
     @InjectModel(Notification.name) private readonly notificationModel: Model<Notification>,
     @InjectConnection() private readonly connection: Connection,
+    private readonly mail: MailService,
   ) {}
+
+  /**
+   * Optional bonus: the same notification by email, for active users who did not turn
+   * preferences.emailNotifications off. Runs in the background and never fails the caller.
+   */
+  private emailCopy(userIds: Id[], title: string, message: string) {
+    void (async () => {
+      try {
+        const users = await this.connection
+          .collection('users')
+          .find(
+            {
+              _id: { $in: userIds.map((id) => new Types.ObjectId(id.toString())) },
+              status: 'active',
+              'preferences.emailNotifications': { $ne: false },
+            },
+            { projection: { email: 1, firstName: 1 } },
+          )
+          .toArray();
+        for (const u of users) {
+          await this.mail.send({
+            to: u.email as string,
+            subject: title,
+            text: `Hello ${u.firstName as string},\n\n${message}\n\nYou can see all your notifications in the Travel Platform. To stop these emails, turn off preferences.emailNotifications in your profile.`,
+          });
+        }
+      } catch (err) {
+        this.logger.error(`Could not email notification "${title}"`, err as Error);
+      }
+    })();
+  }
 
   async notify(
     userId: Id,
@@ -38,6 +71,7 @@ export class NotificationsService {
         message,
         data,
       });
+      this.emailCopy([userId], title, message);
     } catch (err) {
       this.logger.error(`Could not send ${type} notification to ${userId.toString()}`, err as Error);
     }
@@ -57,6 +91,7 @@ export class NotificationsService {
       await this.notificationModel.insertMany(
         unique.map((id) => ({ user: new Types.ObjectId(id), type, title, message, data })),
       );
+      this.emailCopy(unique, title, message);
     } catch (err) {
       this.logger.error(`Could not send ${type} notifications`, err as Error);
     }

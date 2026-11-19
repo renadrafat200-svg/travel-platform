@@ -8,6 +8,7 @@ import {
   Matches,
   MaxLength,
   ValidateNested,
+  IsBoolean,
 } from 'class-validator';
 
 export class UpdatePreferencesDto {
@@ -15,6 +16,11 @@ export class UpdatePreferencesDto {
   @IsOptional()
   @Matches(/^[A-Za-z]{3}$/, { message: 'currency must be a 3-letter code such as EGP or USD' })
   currency?: string;
+
+  @ApiPropertyOptional({ example: true, description: 'Also receive my notifications by email (optional bonus)' })
+  @IsOptional()
+  @IsBoolean()
+  emailNotifications?: boolean;
 }
 
 /** Email, role and status cannot be changed here on purpose */

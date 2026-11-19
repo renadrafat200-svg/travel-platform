@@ -57,6 +57,36 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   FXRATES_API_URL?: string;
+
+  // Optional bonus: email (ACC-02, ACC-07, email notifications). Without SMTP_HOST emails are only logged.
+  @IsOptional()
+  @IsString()
+  SMTP_HOST?: string;
+
+  @IsOptional()
+  @IsInt()
+  SMTP_PORT?: number;
+
+  @IsOptional()
+  @IsString()
+  SMTP_SECURE?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_USER?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_PASS?: string;
+
+  @IsOptional()
+  @IsString()
+  MAIL_FROM?: string;
+
+  /** Public address of this backend, used in email links (default http://localhost:PORT) */
+  @IsOptional()
+  @IsString()
+  APP_URL?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

@@ -44,6 +44,27 @@ export class LoginDto {
   password: string;
 }
 
+/** POST /api/auth/forgot-password (ACC-07, optional) */
+export class ForgotPasswordDto {
+  @ApiProperty({ example: 'malak@example.com' })
+  @Transform(toLowerTrim)
+  @IsEmail({}, { message: 'email must be a valid email address' })
+  email: string;
+}
+
+/** POST /api/auth/reset-password (ACC-07, optional) */
+export class ResetPasswordDto {
+  @ApiProperty({ description: 'The reset code from the email' })
+  @IsString()
+  @IsNotEmpty()
+  token: string;
+
+  @ApiProperty({ example: 'newtravel2026', description: PASSWORD_RULE_MESSAGE })
+  @IsString()
+  @Matches(PASSWORD_REGEX, { message: PASSWORD_RULE_MESSAGE })
+  newPassword: string;
+}
+
 export class ChangePasswordDto {
   @ApiProperty({ example: 'Travel2026' })
   @IsString()
