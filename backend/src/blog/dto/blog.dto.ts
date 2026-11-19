@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsEnum,
+  IsMongoId,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -80,6 +81,18 @@ export class CreatePostDto {
 
 /** BLG-04 / BLG-08: change any field; status can go draft -> published or back to draft */
 export class UpdatePostDto extends PartialType(CreatePostDto) {}
+
+/** PATCH /api/posts/:id/itinerary (BLG-13, optional) */
+export class AttachItineraryDto {
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'Id of one of my PUBLIC itineraries, or null to remove it from the post',
+  })
+  @IsOptional()
+  @IsMongoId({ message: 'itineraryId must be an itinerary id (or null to remove it)' })
+  itineraryId: string | null;
+}
 
 export class PostListQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ description: 'Only posts with this tag (BLG-02)' })

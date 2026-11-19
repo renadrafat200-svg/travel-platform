@@ -48,6 +48,7 @@ import {
   PostListQueryDto,
   TagPostsQueryDto,
   UpdateCommentDto,
+  AttachItineraryDto,
   UpdatePostDto,
 } from './dto/blog.dto';
 
@@ -157,6 +158,25 @@ export class BlogController {
     @Body() dto: UpdatePostDto,
   ) {
     return this.blog.updatePost(user, id, dto);
+  }
+
+  @Patch('posts/:id/itinerary')
+  @ApiCookieAuth('access_token')
+  @ApiOperation({
+    summary: 'Attach one of my public itineraries to my post, or remove it with null (BLG-13, optional)',
+    description:
+      'Readers see the itinerary (title, countries, dates, days) on the post and can open or clone it. It disappears from the post if the itinerary becomes private or hidden.',
+  })
+  @ApiOkResponse({ description: 'The post with its itinerary' })
+  @ApiBadRequestResponse({ description: 'The itinerary is not public, or nothing to remove' })
+  @ApiForbiddenResponse({ description: 'Not your post' })
+  @ApiNotFoundResponse({ description: 'Post not found, or not one of my itineraries' })
+  attachItinerary(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: AttachItineraryDto,
+  ) {
+    return this.blog.attachItinerary(user, id, dto);
   }
 
   @Delete('posts/:id')
