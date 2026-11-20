@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Patch, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Patch, Post, Query, Req, Res } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
@@ -20,7 +20,14 @@ import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { AUTH_COOKIE_NAME, REFRESH_COOKIE_NAME } from '../config/auth.constants';
 import { clearAuthCookies, setAuthCookies } from './auth-cookie';
 import { AuthService } from './auth.service';
-import { ChangePasswordDto, LoginDto, RegisterDto } from './dto/auth.dto';
+import {
+  ChangePasswordDto,
+  ForgotPasswordDto,
+  LoginDto,
+  RegisterDto,
+  ResetPasswordDto,
+} from './dto/auth.dto';
+import { EmailAuthService } from './email-auth.service';
 
 const cookie = (req: Request, name: string) =>
   (req.cookies as Record<string, string> | undefined)?.[name];
@@ -28,7 +35,10 @@ const cookie = (req: Request, name: string) =>
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly emailAuth: EmailAuthService,
+  ) {}
 
   @Public()
   @Post('register')
@@ -36,11 +46,61 @@ export class AuthController {
     summary: 'Register a new user account (ACC-01)',
     description: 'Password: at least 8 characters with a letter and a digit. acceptTerms must be true.',
   })
-  @ApiCreatedResponse({ description: 'Account created. Log in next.' })
+  @ApiCreatedResponse({ description: 'Account created. Log in next. A confirmation link is emailed (ACC-02, optional).' })
   @ApiBadRequestResponse({ description: 'Invalid email, weak password, or terms not accepted' })
   @ApiConflictResponse({ description: 'Email already registered' })
-  register(@Body() dto: RegisterDto) {
-    return this.auth.register(dto);
+  async register(@Body() dto: RegisterDto) {
+    const profile = await this.auth.register(dto);
+    await this.emailAuth.sendVerification(profile.id);
+    return profile;
+  }
+
+  // ---------------- ACC-02 / ACC-07 (optional): email ----------------
+
+  @Public()
+  @Get('verify-email')
+  @ApiOperation({
+    summary: 'Confirm my email address with the link from the confirmation email (ACC-02, optional)',
+  })
+  @ApiOkResponse({ description: 'Email confirmed' })
+  @ApiBadRequestResponse({ description: 'Link invalid, used or expired (24 hours)' })
+  verifyEmail(@Query('token') token: string) {
+    return this.emailAuth.verify(token);
+  }
+
+  @Post('resend-verification')
+  @HttpCode(200)
+  @ApiCookieAuth('access_token')
+  @ApiOperation({ summary: 'Email me a new confirmation link (ACC-02, optional)' })
+  @ApiOkResponse({ description: 'Sent (or already confirmed)' })
+  resendVerification(@CurrentUser() user: AuthUser) {
+    return this.emailAuth.resend(user.id);
+  }
+
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Forgot my password: email me a one-time reset code (ACC-07, optional)',
+    description:
+      'Always answers the same message, whether or not the email is registered. The code works once, for 30 minutes.',
+  })
+  @ApiOkResponse({ description: 'If the account exists, a code was emailed' })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.emailAuth.forgotPassword(dto.email);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Set a new password with the reset code from the email (ACC-07, optional)',
+    description: 'Logs out every session. Failed-login lockout is cleared.',
+  })
+  @ApiOkResponse({ description: 'Password reset' })
+  @ApiBadRequestResponse({ description: 'Code invalid, used or expired, or the password breaks the rules' })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.emailAuth.resetPassword(dto.token, dto.newPassword);
   }
 
   @Public()
