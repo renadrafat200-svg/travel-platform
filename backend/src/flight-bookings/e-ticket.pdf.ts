@@ -26,6 +26,7 @@ export interface ETicketData {
             name: string;
             passportNumber: string | null;
             type: string;
+            seat?: string | null;
             ticketNumber?: string;
             extraBags: number;
         }[];
@@ -78,7 +79,7 @@ export function buildETicketPdf(t: ETicketData): Promise<Buffer> {
             for (const p of f.passengers) {
                 doc.text(
                     `${p.name} (${p.type})   Passport/ID: ${p.passportNumber ?? '-'}   ` +
-                        `Ticket: ${p.ticketNumber ?? '-'}   Extra bags: ${p.extraBags}`,
+                        `Seat: ${p.seat ?? '-'}   Ticket: ${p.ticketNumber ?? '-'}   Extra bags: ${p.extraBags}`,
                 );
             }
         });
