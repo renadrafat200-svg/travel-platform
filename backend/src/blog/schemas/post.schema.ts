@@ -72,6 +72,13 @@ export class Post {
   @Prop({ default: 0 })
   commentCount: number;
 
+  /**
+   * BLG-13 (optional): one of the author's PUBLIC itineraries attached to the post.
+   * Shown only while that itinerary is still public and not hidden.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'Itinerary' })
+  itinerary?: Types.ObjectId;
+
   /** Set by an admin through the reports module. Hidden posts are visible only to the author and admins. */
   @Prop({ default: false })
   isHidden: boolean;

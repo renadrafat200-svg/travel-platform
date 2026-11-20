@@ -18,6 +18,8 @@ export enum NotificationType {
   PROVIDER_DEACTIVATED = 'provider.deactivated',
   PROVIDER_REACTIVATED = 'provider.reactivated',
   REPORT_RESOLVED = 'report.resolved',
+  /** HTL-26 (optional): the hotel replied to your review */
+  REVIEW_REPLIED = 'review.replied',
 }
 
 @Schema({ timestamps: { createdAt: true, updatedAt: false } })

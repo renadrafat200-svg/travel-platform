@@ -23,6 +23,7 @@ import {
   CreatePostDto,
   PostListQueryDto,
   UpdateCommentDto,
+  AttachItineraryDto,
   UpdatePostDto,
 } from './dto/blog.dto';
 import { Comment, CommentDocument } from './schemas/comment.schema';
@@ -90,6 +91,60 @@ export class BlogService {
     }
     await post.save();
     return this.getPost(user, id);
+  }
+
+  /**
+   * BLG-13 (optional): attach one of my public itineraries to my post (null removes it).
+   * Readers see its title, countries, dates and length, and can open or clone it.
+   */
+  async attachItinerary(user: AuthUser, id: string, dto: AttachItineraryDto) {
+    const post = await this.getOwnPost(user, id);
+    if (!dto.itineraryId) {
+      if (!post.itinerary) throw new BadRequestException('This post has no itinerary attached');
+      post.set('itinerary', undefined);
+    } else {
+      const itinerary = await this.connection
+        .collection('itineraries')
+        .findOne(
+          { _id: new Types.ObjectId(dto.itineraryId) },
+          { projection: { owner: 1, isPublic: 1, isHidden: 1 } },
+        );
+      if (!itinerary || !(itinerary.owner as Types.ObjectId).equals(user.id)) {
+        throw new NotFoundException('Itinerary not found among your itineraries');
+      }
+      if (itinerary.isPublic !== true || itinerary.isHidden === true) {
+        throw new BadRequestException(
+          'Only a public itinerary can be attached. Make it public first (PATCH /api/itineraries/{id} visibility=public).',
+        );
+      }
+      post.itinerary = itinerary._id as Types.ObjectId;
+    }
+    await post.save();
+    return this.getPost(user, id);
+  }
+
+  /** BLG-13: the attached itinerary, only while it is still public and not hidden */
+  private async attachedItinerary(post: Post) {
+    if (!post.itinerary) return null;
+    const d = await this.connection.collection('itineraries').findOne({
+      _id: post.itinerary,
+      isPublic: true,
+      isHidden: { $ne: true },
+    });
+    if (!d) return null;
+    const startDate = d.startDate as Date;
+    const dayCount = (d.dayCount as number) ?? 0;
+    const end = new Date(startDate.getTime() + Math.max(dayCount - 1, 0) * 86_400_000);
+    return {
+      id: d._id.toString(),
+      title: d.title as string,
+      countries: (d.countries as string[]) ?? [],
+      cities: (d.cities as string[]) ?? [],
+      startDate: startDate.toISOString().slice(0, 10),
+      endDate: end.toISOString().slice(0, 10),
+      days: dayCount,
+      url: `/api/itineraries/public/${d._id.toString()}`,
+    };
   }
 
   /** BLG-04: the author (or an admin) deletes a post with its comments, likes and images */
@@ -194,7 +249,7 @@ export class BlogService {
         ...(user ? [{ author: new Types.ObjectId(user.id) }] : []),
       ];
     }
-    const [comments, likedByMe] = await Promise.all([
+    const [comments, likedByMe, itinerary] = await Promise.all([
       this.commentModel
         .find(commentFilter)
         .sort({ createdAt: 1, _id: 1 })
@@ -204,6 +259,7 @@ export class BlogService {
             .exists({ post: post._id, user: new Types.ObjectId(user.id) })
             .exec()
         : null,
+      this.attachedItinerary(post),
     ]);
     const authors = await this.authorInfo([
       post.author,
@@ -226,6 +282,8 @@ export class BlogService {
       likeCount: post.likeCount,
       commentCount: post.commentCount,
       likedByMe: !!likedByMe,
+      // BLG-13 (optional)
+      itinerary,
       ...((isAuthor || isAdmin) && {
         status: post.status,
         isHidden: !!post.isHidden,

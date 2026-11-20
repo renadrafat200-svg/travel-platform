@@ -8,7 +8,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
@@ -19,6 +22,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiProduces,
   ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -46,7 +50,9 @@ import {
   PublicSearchQueryDto,
   PublicViewQueryDto,
 } from './dto/itinerary-public.dto';
+import { AttachBookingDto, ItineraryPdfQueryDto } from './dto/itinerary-extras.dto';
 import { ItinerariesService } from './itineraries.service';
+import { ItineraryExtrasService } from './itinerary-extras.service';
 import { ItineraryItemsService } from './itinerary-items.service';
 import { ItineraryPublicService } from './itinerary-public.service';
 
@@ -63,6 +69,7 @@ export class ItinerariesController {
     private readonly itineraries: ItinerariesService,
     private readonly items: ItineraryItemsService,
     private readonly shared: ItineraryPublicService,
+    private readonly extras: ItineraryExtrasService,
   ) {}
 
   // ---------------- Public itineraries (must stay above ':id' routes) ----------------
@@ -126,10 +133,10 @@ export class ItinerariesController {
     summary:
       'One of my itineraries with its days, dates and city groups (ITN-03, ITN-09)',
   })
-  @ApiOkResponse({ description: 'The full itinerary' })
+  @ApiOkResponse({ description: 'The full itinerary, with my attached bookings (ITN-27)' })
   @ApiNotFoundResponse({ description: 'Not found or not yours' })
   findMine(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.itineraries.findMine(user, id);
+    return this.extras.findMineWithBookings(user, id);
   }
 
   @Patch(':id')
@@ -305,6 +312,74 @@ export class ItinerariesController {
     @Query() query: BudgetSummaryQueryDto,
   ) {
     return this.items.budgetSummary(user, id, query.currency);
+  }
+
+  // ---------------- ITN-27 (optional): attached bookings ----------------
+
+  @Post(':id/bookings')
+  @ApiOperation({
+    summary: 'Attach one of my confirmed flight or hotel bookings to my itinerary (ITN-27, optional)',
+    description:
+      'Shown in the itinerary (with the day numbers it covers) and in the PDF. Only the owner sees attached bookings; clones never get them.',
+  })
+  @ApiCreatedResponse({ description: 'The itinerary with its bookings' })
+  @ApiBadRequestResponse({ description: 'Booking not confirmed, or too many attached' })
+  @ApiNotFoundResponse({ description: 'Itinerary not found, or not one of my bookings' })
+  @ApiConflictResponse({ description: 'Already attached' })
+  attachBooking(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: AttachBookingDto,
+  ) {
+    return this.extras.attach(user, id, dto);
+  }
+
+  @Get(':id/bookings')
+  @ApiOperation({ summary: 'The bookings attached to my itinerary, with their current status (ITN-27, optional)' })
+  @ApiOkResponse({ description: '{ itineraryId, items }' })
+  @ApiNotFoundResponse({ description: 'Not found or not yours' })
+  listBookings(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.extras.list(user, id);
+  }
+
+  @Delete(':id/bookings/:attachmentId')
+  @ApiOperation({
+    summary: 'Detach a booking from my itinerary; the booking itself is not changed (ITN-27, optional)',
+    description: 'attachmentId is the "id" of the attached entry (the booking id also works).',
+  })
+  @ApiOkResponse({ description: 'The itinerary with its bookings' })
+  @ApiNotFoundResponse({ description: 'Not attached' })
+  detachBooking(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('attachmentId') attachmentId: string,
+  ) {
+    return this.extras.detach(user, id, attachmentId);
+  }
+
+  // ---------------- ITN-28 (optional): PDF export ----------------
+
+  @Public()
+  @Get(':id/pdf')
+  @ApiOperation({
+    summary: 'Download the itinerary as a PDF (ITN-28, optional)',
+    description:
+      'My own itineraries (with my attached bookings), or any public one (also for guests). Budget totals are in ?currency= or my preferred currency.',
+  })
+  @ApiProduces('application/pdf')
+  @ApiOkResponse({ description: 'PDF file' })
+  @ApiBadRequestResponse({ description: 'Invalid or unsupported currency' })
+  @ApiNotFoundResponse({ description: 'Not found, private or hidden' })
+  async pdf(
+    @CurrentUser() user: AuthUser | undefined,
+    @Param('id') id: string,
+    @Query() query: ItineraryPdfQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { file, fileName } = await this.extras.pdf(user, id, query.currency);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return new StreamableFile(file);
   }
 
   // ---------------- Clone, hotels and flights ----------------

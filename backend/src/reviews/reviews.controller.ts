@@ -31,6 +31,7 @@ import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import {
   CreateReviewDto,
   HotelReviewsQueryDto,
+  ReviewReplyDto,
   UpdateReviewDto,
 } from './dto/review.dto';
 import { ReviewsService } from './reviews.service';
@@ -136,6 +137,56 @@ export class ReviewsController {
     @Body() dto: UpdateReviewDto,
   ) {
     return this.reviews.update(user, id, dto);
+  }
+
+  // ---------- HTL-26 (optional): hotel replies ----------
+
+  @Post('reviews/:id/reply')
+  @Roles(Role.HOTEL_MODERATOR, Role.ADMIN)
+  @ApiCookieAuth('access_token')
+  @ApiOperation({
+    summary: 'Hotel moderator: reply publicly to a review of my hotel (HTL-26, optional)',
+    description:
+      'One reply per review. Shown under the review on the hotel page. The reviewer is notified.',
+  })
+  @ApiCreatedResponse({ description: 'The review with its reply' })
+  @ApiBadRequestResponse({ description: 'Empty or too long, or the review is hidden' })
+  @ApiForbiddenResponse({ description: 'Not the moderator of this hotel' })
+  @ApiNotFoundResponse({ description: 'Review not found' })
+  @ApiConflictResponse({ description: 'Already replied (use PATCH)' })
+  addReply(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: ReviewReplyDto,
+  ) {
+    return this.reviews.addReply(user, id, dto);
+  }
+
+  @Patch('reviews/:id/reply')
+  @Roles(Role.HOTEL_MODERATOR, Role.ADMIN)
+  @ApiCookieAuth('access_token')
+  @ApiOperation({ summary: 'Hotel moderator: edit my reply (HTL-26, optional)' })
+  @ApiOkResponse({ description: 'The review with the updated reply' })
+  @ApiForbiddenResponse({ description: 'Not the moderator of this hotel' })
+  @ApiNotFoundResponse({ description: 'Review or reply not found' })
+  updateReply(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: ReviewReplyDto,
+  ) {
+    return this.reviews.updateReply(user, id, dto);
+  }
+
+  @Delete('reviews/:id/reply')
+  @HttpCode(204)
+  @Roles(Role.HOTEL_MODERATOR, Role.ADMIN)
+  @ApiCookieAuth('access_token')
+  @ApiOperation({ summary: 'Hotel moderator: delete my reply (HTL-26, optional)' })
+  @ApiNoContentResponse({ description: 'Deleted' })
+  @ApiForbiddenResponse({ description: 'Not the moderator of this hotel' })
+  @ApiNotFoundResponse({ description: 'Review or reply not found' })
+  removeReply(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.reviews.removeReply(user, id);
   }
 
   @Delete('reviews/:id')

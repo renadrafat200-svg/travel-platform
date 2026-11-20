@@ -1,8 +1,30 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import { REVIEW_COMMENT_MAX_LENGTH } from '../review.constants';
+import { REPLY_MAX_LENGTH, REVIEW_COMMENT_MAX_LENGTH } from '../review.constants';
 
 export type ReviewDocument = HydratedDocument<Review>;
+
+/** HTL-26 (optional): the hotel moderator's public reply. One per review. */
+@Schema({ _id: false })
+export class ReviewReply {
+  @Prop({ required: true, trim: true, maxlength: REPLY_MAX_LENGTH })
+  text: string;
+
+  /** The moderator (or admin) who wrote it */
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  author: Types.ObjectId;
+
+  /** Shown as "Response from <hotel name>" */
+  @Prop({ required: true })
+  hotelName: string;
+
+  @Prop({ required: true })
+  createdAt: Date;
+
+  @Prop()
+  editedAt?: Date;
+}
+export const ReviewReplySchema = SchemaFactory.createForClass(ReviewReply);
 
 /**
  * HTL-23: one rating (1-5) and an optional comment per Completed hotel reservation,
@@ -42,6 +64,10 @@ export class Review {
 
   @Prop()
   hiddenAt?: Date;
+
+  /** HTL-26 (optional): the hotel's reply */
+  @Prop({ type: ReviewReplySchema })
+  reply?: ReviewReply;
 
   /** When the author last changed the rating or comment */
   @Prop()

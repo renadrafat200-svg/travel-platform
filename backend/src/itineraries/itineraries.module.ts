@@ -1,11 +1,14 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ExchangeRatesModule } from '../exchange-rates/exchange-rates.module';
+import { FlightBookingsModule } from '../flight-bookings/flight-bookings.module';
 import { FlightsModule } from '../flights/flights.module';
+import { HotelBookingsModule } from '../hotel-bookings/hotel-bookings.module';
 import { HotelsModule } from '../hotels/hotels.module';
 import { UsersModule } from '../users/users.module';
 import { ItinerariesController } from './itineraries.controller';
 import { ItinerariesService } from './itineraries.service';
+import { ItineraryExtrasService } from './itinerary-extras.service';
 import { ItineraryItemsController } from './itinerary-items.controller';
 import { ItineraryItemsService } from './itinerary-items.service';
 import { ItineraryPublicService } from './itinerary-public.service';
@@ -30,9 +33,16 @@ import { Itinerary, ItinerarySchema } from './schemas/itinerary.schema';
     ExchangeRatesModule,
     HotelsModule, // HotelSearchService (ITN-25)
     FlightsModule, // FlightSearchService (ITN-26)
+    FlightBookingsModule, // ITN-27 (optional): attach flight bookings
+    HotelBookingsModule, // ITN-27 (optional): attach hotel bookings
   ],
   controllers: [ItinerariesController, ItineraryItemsController],
-  providers: [ItinerariesService, ItineraryItemsService, ItineraryPublicService],
+  providers: [
+    ItinerariesService,
+    ItineraryItemsService,
+    ItineraryPublicService,
+    ItineraryExtrasService, // ITN-27, ITN-28 (optional)
+  ],
   exports: [ItinerariesService],
 })
 export class ItinerariesModule {}

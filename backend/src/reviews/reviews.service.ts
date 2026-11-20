@@ -8,13 +8,17 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AuditService } from '../audit/audit.service';
 import { paginate } from '../common/dto/pagination-query.dto';
-import { Role } from '../common/enums/role.enum';
+import { ProviderType, Role } from '../common/enums/role.enum';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { HotelBookingsService } from '../hotel-bookings/hotel-bookings.service';
 import { HotelsService } from '../hotels/hotels.service';
+import { assertManagesProvider } from '../common/utils/ownership';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/schemas/notification.schema';
 import {
   CreateReviewDto,
   HotelReviewsQueryDto,
+  ReviewReplyDto,
   UpdateReviewDto,
 } from './dto/review.dto';
 import { Review, ReviewDocument } from './schemas/review.schema';
@@ -40,6 +44,7 @@ export class ReviewsService {
     private readonly bookings: HotelBookingsService,
     private readonly hotels: HotelsService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** HTL-23: POST /api/hotel-bookings/:id/review */
@@ -181,6 +186,82 @@ export class ReviewsService {
     return this.toView(review, isAuthor || isAdmin);
   }
 
+  // ---------- HTL-26 (optional): the hotel replies ----------
+
+  /**
+   * POST /api/reviews/:id/reply: the moderator of the reviewed hotel (or an admin) answers
+   * publicly. One reply per review; change it with PATCH. The reviewer gets a notification.
+   */
+  async addReply(user: AuthUser, id: string, dto: ReviewReplyDto) {
+    const review = await this.getReplyable(user, id);
+    if (review.reply) {
+      throw new ConflictException(
+        'This review already has a reply. Edit it with PATCH /api/reviews/{id}/reply',
+      );
+    }
+    const hotel = await this.hotels.getById(review.hotel.toString());
+    review.reply = {
+      text: dto.text,
+      author: new Types.ObjectId(user.id),
+      hotelName: hotel.name,
+      createdAt: new Date(),
+    };
+    await review.save();
+    await this.audit.log(user, {
+      action: 'review.reply',
+      targetType: 'review',
+      targetId: review._id,
+      details: { hotel: review.hotel.toString() },
+    });
+    await this.notifications.notify(
+      review.user,
+      NotificationType.REVIEW_REPLIED,
+      'The hotel replied to your review',
+      `${hotel.name} replied to your review: "${truncate(dto.text, 150)}"`,
+      { reviewId: review._id.toString(), hotelId: review.hotel.toString() },
+    );
+    return this.toView(await this.populate(review));
+  }
+
+  /** PATCH /api/reviews/:id/reply */
+  async updateReply(user: AuthUser, id: string, dto: ReviewReplyDto) {
+    const review = await this.getReplyable(user, id);
+    if (!review.reply) throw new NotFoundException('This review has no reply yet');
+    review.reply.text = dto.text;
+    review.reply.editedAt = new Date();
+    review.markModified('reply');
+    await review.save();
+    await this.audit.log(user, {
+      action: 'review.reply.update',
+      targetType: 'review',
+      targetId: review._id,
+    });
+    return this.toView(await this.populate(review));
+  }
+
+  /** DELETE /api/reviews/:id/reply */
+  async removeReply(user: AuthUser, id: string) {
+    const review = await this.getReplyable(user, id);
+    if (!review.reply) throw new NotFoundException('This review has no reply');
+    review.set('reply', undefined);
+    await review.save();
+    await this.audit.log(user, {
+      action: 'review.reply.delete',
+      targetType: 'review',
+      targetId: review._id,
+    });
+  }
+
+  /** Only the moderator of THIS hotel (or an admin); hidden reviews cannot be answered */
+  private async getReplyable(user: AuthUser, id: string) {
+    const review = await this.getById(id);
+    assertManagesProvider(user, ProviderType.HOTEL, review.hotel);
+    if (review.isHidden) {
+      throw new BadRequestException('This review was hidden by an administrator');
+    }
+    return review;
+  }
+
   /**
    * Recomputes the hotel's averageRating and reviewCount from its visible reviews
    * and saves them on the hotel (Member 4's setRating).
@@ -245,7 +326,19 @@ export class ReviewsService {
       author: { id: (u?._id ?? r.user).toString(), name: name || 'Guest' },
       createdAt: r.createdAt,
       editedAt: r.editedAt ?? null,
+      // HTL-26 (optional)
+      reply: r.reply
+        ? {
+            text: r.reply.text,
+            from: r.reply.hotelName,
+            createdAt: r.reply.createdAt,
+            editedAt: r.reply.editedAt ?? null,
+          }
+        : null,
       ...(showHiddenFlag && { isHidden: !!r.isHidden }),
     };
   }
 }
+
+const truncate = (text: string, max: number) =>
+  text.length > max ? `${text.slice(0, max - 1)}…` : text;
