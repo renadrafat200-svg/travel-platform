@@ -305,3 +305,25 @@ trips "completed", and made GET /:id/e-ticket download a PDF (?format=json
 for JSON). I tested every case against a local test database, including a
 rescheduled flight and a round trip where only the outbound had departed.
 ================================================
+Date: 2026-11-20
+Student: Renad Raafat (Team leader)
+Tool: Claude
+Related Requirement: Optional bonuses: ACC-02, ACC-07, email notifications, FLT-27, FLT-28, HTL-26, ITN-27, ITN-28, BLG-13, admin analytics, favourites
+
+Prompt:
+All mandatory requirements are done and tested. Now do the optional bonus
+features fully, each on its own branch, without breaking any member's work.
+
+How the output was used:
+Claude built, in stacked PRs #41 to #46: hotel replies to reviews (HTL-26);
+attaching confirmed bookings to itineraries and itinerary PDF export
+(ITN-27, ITN-28); attaching a public itinerary to a blog post (BLG-13); seat
+selection with a race-safe seat map and changing to another flight of the
+same airline/route/cabin (FLT-28, FLT-27); email verification, forgotten
+password by email and email copies of notifications through SMTP with a
+terminal fallback (ACC-02, ACC-07); an admin analytics dashboard and
+favourites for hotels, public itineraries and posts. Every feature has its
+own end-to-end test against a local database (and a local SMTP server for
+email), and every member's test suite was rerun after the changes. Rules the
+workbook leaves open (e.g. change-flight fare rules) are documented in each PR.
+================================================

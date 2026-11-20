@@ -5,6 +5,8 @@ import { HotelBookingsModule } from '../hotel-bookings/hotel-bookings.module';
 import { HotelsModule } from '../hotels/hotels.module';
 import { UsersModule } from '../users/users.module';
 import { AdminAccountsController } from './admin-accounts.controller';
+import { AdminAnalyticsController } from './admin-analytics.controller';
+import { AdminAnalyticsService } from './admin-analytics.service';
 import { AdminAccountsService } from './admin-accounts.service';
 import { AdminBookingsController } from './admin-bookings.controller';
 import { AdminBookingsService } from './admin-bookings.service';
@@ -18,7 +20,12 @@ import { AdminProvidersService } from './admin-providers.service';
  */
 @Module({
   imports: [UsersModule, AirlinesModule, HotelsModule, FlightBookingsModule, HotelBookingsModule],
-  controllers: [AdminAccountsController, AdminProvidersController, AdminBookingsController],
-  providers: [AdminAccountsService, AdminProvidersService, AdminBookingsService],
+  controllers: [
+    AdminAccountsController,
+    AdminProvidersController,
+    AdminBookingsController,
+    AdminAnalyticsController, // optional bonus
+  ],
+  providers: [AdminAccountsService, AdminProvidersService, AdminBookingsService, AdminAnalyticsService],
 })
 export class AdminModule {}
