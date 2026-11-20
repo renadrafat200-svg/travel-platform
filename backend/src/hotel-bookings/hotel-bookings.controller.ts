@@ -131,7 +131,8 @@ export class HotelBookingsController {
 export class HotelReservationsController {
   constructor(private readonly bookings: HotelBookingsService) {}
 
-  @Get(':id/bookings')
+  // ':id/reservations' is the project PDF's path; ':id/bookings' kept for existing clients
+  @Get([':id/reservations', ':id/bookings'])
   @Roles(Role.HOTEL_MODERATOR, Role.ADMIN)
   @ApiOperation({
     summary: 'Reservations of my hotel: guest, dates and status (HTL-22)',

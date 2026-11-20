@@ -359,6 +359,17 @@ export class RoomsService {
    * Night-by-night status of a room: Available, Booked (with the reservation reference) or Blocked.
    * Nights outside every bookable range show as "not_bookable".
    */
+  /** GET /api/hotels/:id/availability (HTL-08): the calendar of every room of the hotel */
+  async hotelCalendar(user: AuthUser, hotelId: string, q: RoomCalendarQueryDto) {
+    const hotel = await this.hotels.getManageable(user, hotelId);
+    const rooms = await this.roomModel.find({ hotel: hotel._id }).sort({ roomNumber: 1 }).exec();
+    const calendars = [];
+    for (const room of rooms) {
+      calendars.push(await this.calendar(user, hotelId, room._id.toString(), q));
+    }
+    return { hotelId: hotel._id.toString(), from: q.from, to: q.to, rooms: calendars };
+  }
+
   async calendar(
     user: AuthUser,
     hotelId: string,

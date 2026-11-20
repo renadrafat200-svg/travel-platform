@@ -42,7 +42,9 @@ import {
 } from './dto/hotel.dto';
 import { MAX_HOTEL_PHOTOS } from './hotel.constants';
 import { HotelSearchService } from './hotel-search.service';
+import { RoomCalendarQueryDto } from './dto/room.dto';
 import { HotelsService, MAX_PHOTO_BYTES } from './hotels.service';
+import { RoomsService } from './rooms.service';
 import type { UploadedImage } from './hotels.service';
 
 @ApiTags('Hotels')
@@ -52,6 +54,7 @@ export class HotelsController {
   constructor(
     private readonly hotels: HotelsService,
     private readonly searchService: HotelSearchService,
+    private readonly rooms: RoomsService,
   ) {}
 
   @Post()
@@ -137,6 +140,23 @@ export class HotelsController {
     @CurrentUser() user?: AuthUser,
   ) {
     return this.searchService.details(id, query, user);
+  }
+
+  @Get(':id/availability')
+  @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
+  @ApiOperation({
+    summary:
+      'Availability calendar of every room of my hotel: available, booked (with reference) or blocked per night (HTL-08)',
+  })
+  @ApiOkResponse({ description: '{ hotelId, from, to, rooms: [{ room, nights }] }' })
+  @ApiForbiddenResponse({ description: 'Not your hotel' })
+  @ApiNotFoundResponse({ description: 'Hotel not found' })
+  availability(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Query() query: RoomCalendarQueryDto,
+  ) {
+    return this.rooms.hotelCalendar(user, id, query);
   }
 
   @Get(':id/policies')
