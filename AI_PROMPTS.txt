@@ -324,6 +324,58 @@ itineraries). I set up my .env, ran the backend on my laptop, tested
 every endpoint in Swagger, and pushed both features as PRs #21 and
 #22 under my account.
 ================================================
+Date: 2026-11-17
+Student: Renad Raafat (Team leader)
+Tool: Claude
+Related Requirement: GEN-08, HTL-02
+
+Prompt:
+Member 4 just finished, check it. / I don't get the photo storage
+note. Can I fix this as the team leader?
+
+How the output was used:
+Claude tested Member 4's hotels and hotel bookings against the
+workbook and found that hotel photos were saved on the local disk, so
+they would disappear on another laptop or server. It moved the photo
+bytes into a MongoDB collection (hotelphotofiles) served by the API.
+I reviewed and merged it as PR #20.
+================================================
+Date: 2026-11-18
+Student: Renad Raafat (Team leader)
+Tool: Claude
+Related Requirement: All modules (integration and review)
+
+Prompt:
+Show me the tasks of all members. / Check that Member 1, 2, 4, 5, 6
+and 7 are fully done. / Give me the complete requirements to send to
+Member 6 and Member 7. / What is remaining for Member 3?
+
+How the output was used:
+Claude compared each member's merged code with the workbook rows and
+the project PDF, ran end-to-end tests for every module against a test
+database, and wrote paste-ready requirement briefs for the members
+(endpoints, rules, shared collections and naming). I sent the briefs
+to the members, reviewed their PRs with these results, and followed
+up on the gaps (for example Member 2's fixes and Member 3's fixes).
+================================================
+Date: 2026-11-19
+Student: Renad Raafat (Team leader)
+Tool: Claude
+Related Requirement: PAY-01, PAY-03
+
+Prompt:
+Show me the steps to add the Stripe keys to the .env. / The log shows
+"No such payment_intent" every minute. Can you fix it? I am the team
+leader.
+
+How the output was used:
+Claude explained the Stripe test-mode setup (API keys, Stripe CLI
+webhook forwarding) and found that old payments in the shared database
+belonged to another Stripe account. It made the payment and refund
+code mark such payments cancelled instead of failing every minute. I
+tested a real test-mode payment end to end (webhook returned 200) and
+merged it as PR #33.
+================================================
 Date: 2026-11-20
 Student: Renad Raafat (Team leader)
 Tool: Claude
@@ -345,4 +397,24 @@ favourites for hotels, public itineraries and posts. Every feature has its
 own end-to-end test against a local database (and a local SMTP server for
 email), and every member's test suite was rerun after the changes. Rules the
 workbook leaves open (e.g. change-flight fare rules) are documented in each PR.
+================================================
+Date: 2026-11-20
+Student: Renad Raafat (Team leader)
+Tool: Claude
+Related Requirement: Final submission check (all requirements)
+
+Prompt:
+Test the whole project in detail, the code and Swagger, and make sure
+everything is running before I submit. / Are the npm vulnerabilities
+normal? / Check the project is ready to submit.
+
+How the output was used:
+Claude ran the build, type check, lint and every member's test suite
+on a fresh database (763 checks, all passing), compared all 119
+endpoints listed in the project PDF with Swagger and added the 5 paths
+that existed under other names (PR #47), upgraded the email library
+after npm audit showed a high-severity issue (PR #48), fixed the
+missing "payment failed" notification and a lint warning (PRs #39,
+#40), and finished the README and this log (PR #50). I reviewed and
+merged each PR, then merged develop into main with Nadeen's approval.
 ================================================
