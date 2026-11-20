@@ -305,6 +305,25 @@ trips "completed", and made GET /:id/e-ticket download a PDF (?format=json
 for JSON). I tested every case against a local test database, including a
 rescheduled flight and a round trip where only the outbound had departed.
 ================================================
+Date: 2026-11-17
+Student: Omar Ahmed Abdelkareem (Member 5)
+Tool: Claude
+Related Requirement: HTL-23, HTL-24, BLG-01 to BLG-10, BLG-12
+
+Prompt:
+I'm Member 5 now, let's start from scratch. (Then I pasted the
+HTL-17 to HTL-24 and BLG-01 to BLG-12 rows from the requirements
+workbook and asked for reviews and the travel blog.)
+
+How the output was used:
+Claude built the reviews module (one review per completed stay,
+hotel average rating, edit/delete, hidden reviews) and the blog
+module (posts with drafts, tags and search, comments, likes, post
+images stored in MongoDB, tag pages and author pages with public
+itineraries). I set up my .env, ran the backend on my laptop, tested
+every endpoint in Swagger, and pushed both features as PRs #21 and
+#22 under my account.
+================================================
 Date: 2026-11-20
 Student: Renad Raafat (Team leader)
 Tool: Claude

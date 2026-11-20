@@ -13,6 +13,19 @@ Software Project I (Winter 2026), GIU. Backend: NestJS + MongoDB Atlas. Frontend
    - API health check: http://localhost:3000/api/health (should say `"database": "connected"`)
    - Swagger docs: http://localhost:3000/api/docs
 
+## Environment variables (`backend/.env`)
+
+Copy `.env.example` from the repo root. Real values are shared privately inside the team; never commit them.
+
+| Variable | Needed for |
+| --- | --- |
+| `MONGODB_URI`, `PORT`, `JWT_SECRET`, `JWT_EXPIRES_IN` | the app itself (required) |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | the admin account created on first start |
+| `COOKIE_SECURE` | `false` only if a testing tool drops Secure cookies on http://localhost |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | payments and refunds (Stripe test mode; run `stripe listen --forward-to localhost:3000/api/payments/webhook`) |
+| `FXRATES_API_KEY` | itinerary currency conversion (free key from fxratesapi.com; rates are cached once a day) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `APP_URL` | optional bonus emails. Without `SMTP_HOST`, emails are printed in the terminal instead of sent |
+
 ## Demo login
 
 The admin account is created automatically on the first start from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env`.
@@ -83,7 +96,44 @@ backend/src/
   users/                                    User schema, /api/users/me, admin seeding
   hotels/                                   hotels, policies, rooms, blocked dates, availability, hotel search
   hotel-bookings/                           multi-room bookings with holds, cancellation + refunds, reservations
+  admin/  reports/  audit/                  admin accounts, providers, bookings, analytics; reports + moderation; audit log
+  reference-data/                           countries, cities, airports, attractions, currencies (seeded from data/)
+  airlines/  flights/  flight-bookings/     airlines + policies, flights + search, flight bookings, seats, e-ticket PDF
+  reviews/  blog/                           hotel reviews (+ replies), blog posts, comments, likes, images
+  notifications/  payments/                 in-app (+ email) notifications; Stripe payments, refunds, policies
+  itineraries/  exchange-rates/             itineraries, budgets, PDF export, public search + clone; daily FX rates
+  favourites/  mail/                        optional bonuses: favourites, email sending
 ```
+
+## Who built what
+
+| Member | Area | Main paths |
+| --- | --- | --- |
+| 1 | Accounts, sessions, admin, reports, audit | `/api/auth`, `/api/users`, `/api/admin`, `/api/reports` |
+| 2 | Reference data, airlines, flights, flight search | `/api/airports`, `/api/airlines`, `/api/flights` |
+| 3 | Flight bookings, e-ticket, cancellations | `/api/flight-bookings` |
+| 4 | Hotels, rooms, availability, hotel search, hotel bookings | `/api/hotels`, `/api/hotel-bookings` |
+| 5 | Hotel reviews, travel blog | `/api/reviews`, `/api/posts`, `/api/tags`, `/api/authors` |
+| 6 | Notifications, policies, payments, refunds | `/api/notifications`, `/api/bookings/.../policies`, `/api/payments`, `/api/refunds` |
+| 7 | Itineraries, budgets, exchange rates | `/api/itineraries`, `/api/activities`, `/api/budgets`, `/api/exchange-rates` |
+| Leader | Integration, fixes, optional bonuses | see "Optional bonuses" below |
+
+## Optional bonuses (implemented)
+
+- Email verification and forgotten password by email (ACC-02, ACC-07): `/api/auth/verify-email`, `/api/auth/forgot-password`, `/api/auth/reset-password`; notifications are also emailed
+- Change flight and seat selection (FLT-27, FLT-28): `/api/flight-bookings/:id/change-flight`, `/api/flight-bookings/:id/seats`, `/api/flight-bookings/:id/seat`
+- Hotel replies to reviews (HTL-26): `/api/reviews/:id/reply`
+- Attach confirmed bookings to an itinerary and export it as PDF (ITN-27, ITN-28): `/api/itineraries/:id/bookings`, `/api/itineraries/:id/pdf`
+- Attach a public itinerary to a blog post (BLG-13): `/api/posts/:id/itinerary`
+- Admin analytics `/api/admin/analytics` and favourites `/api/favourites`
+
+## Evaluating in Swagger
+
+1. Open http://localhost:3000/api/docs and call `POST /api/auth/login` (the cookie is then sent automatically).
+2. Admin: create airlines, hotels and moderators (`POST /api/admin/moderators`). A new moderator must change their password first.
+3. Moderators: add flights/cabins or rooms + bookable ranges, then users can search and book.
+4. Book (hold) -> accept policies -> `POST /api/payments` -> pay with a Stripe test card -> the webhook confirms the booking.
+5. Race-condition proofs: `node scripts/check-room-race.js` and `node scripts/check-seat-race.js` in `backend`.
 
 ## Hotels and hotel booking (Member 4)
 
@@ -127,4 +177,9 @@ taken on any night the whole request is rolled back and nothing is held. Prove i
 
 ## Demo accounts
 
-To be added after seeding.
+Passwords are not stored in this public repository; the team shares them at the demo.
+
+- **Admin**: the `ADMIN_EMAIL` / `ADMIN_PASSWORD` account from `backend/.env`, created on first start.
+- **Airline / hotel moderators**: created by the admin with `POST /api/admin/moderators` (one per airline or hotel).
+- **Traveller**: any account made with `POST /api/auth/register`. The team's demo traveller also has a real inbox,
+  to show the email bonuses (confirmation link, password reset code, notification emails).
