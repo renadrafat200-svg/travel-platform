@@ -1,0 +1,104 @@
+import { plainToInstance } from 'class-transformer';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  validateSync,
+} from 'class-validator';
+
+class EnvironmentVariables {
+  @IsString()
+  @Matches(/^mongodb(\+srv)?:\/\//, {
+    message: 'MONGODB_URI must start with mongodb:// or mongodb+srv://',
+  })
+  MONGODB_URI: string;
+
+  @IsOptional()
+  @IsInt()
+  PORT?: number;
+
+  @IsString()
+  @IsNotEmpty()
+  JWT_SECRET: string;
+
+  @IsOptional()
+  @IsString()
+  JWT_EXPIRES_IN?: string; // no longer used: access tokens last 15 minutes (auth.constants.ts)
+
+  @IsOptional()
+  @IsString()
+  FRONTEND_URL?: string;
+
+  // Seeded administrator (created on first start if no admin exists)
+  @IsOptional()
+  @IsString()
+  ADMIN_EMAIL?: string;
+
+  @IsOptional()
+  @IsString()
+  ADMIN_PASSWORD?: string;
+
+  // Needed later by the payments and itinerary modules
+  @IsOptional()
+  @IsString()
+  STRIPE_SECRET_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  STRIPE_WEBHOOK_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  FXRATES_API_KEY?: string;
+
+  // ITN-18: only to point at another rates server (default https://api.fxratesapi.com/latest)
+  @IsOptional()
+  @IsString()
+  FXRATES_API_URL?: string;
+
+  // Optional bonus: email (ACC-02, ACC-07, email notifications). Without SMTP_HOST emails are only logged.
+  @IsOptional()
+  @IsString()
+  SMTP_HOST?: string;
+
+  @IsOptional()
+  @IsInt()
+  SMTP_PORT?: number;
+
+  @IsOptional()
+  @IsString()
+  SMTP_SECURE?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_USER?: string;
+
+  @IsOptional()
+  @IsString()
+  SMTP_PASS?: string;
+
+  @IsOptional()
+  @IsString()
+  MAIL_FROM?: string;
+
+  /** Public address of this backend, used in email links (default http://localhost:PORT) */
+  @IsOptional()
+  @IsString()
+  APP_URL?: string;
+}
+
+export function validateEnv(config: Record<string, unknown>) {
+  const validated = plainToInstance(EnvironmentVariables, config, {
+    enableImplicitConversion: true,
+  });
+  const errors = validateSync(validated, { skipMissingProperties: false });
+  if (errors.length > 0) {
+    const messages = errors
+      .map((e) => Object.values(e.constraints ?? {}).join(', '))
+      .join('\n  - ');
+    throw new Error(`Invalid backend/.env:\n  - ${messages}`);
+  }
+  return validated;
+}

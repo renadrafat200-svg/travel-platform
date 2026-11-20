@@ -1,0 +1,329 @@
+================================================
+Date: 2026-11-07
+Student: Malak
+Tool: Claude
+Related Requirement: FLT-02
+
+Prompt:
+I'm Member 2 and starting from scratch, what should I do step by step?
+Can you do these steps for me?
+
+How the output was used:
+Claude converted the official dataset into 4 CSV files and wrote the
+reference-data module (seeder + public airports/countries/cities/
+attractions endpoints). I ran it against our Atlas database, checked
+it loaded, and committed it.
+================================================
+Date: 2026-11-09
+Student: Malak
+Tool: Claude
+Related Requirement: FLT-01, FLT-04, FLT-08, FLT-09
+
+Prompt:
+What's left for me to do as Member 2? / I'm only done with the
+reference data, what do I do now?
+
+How the output was used:
+Claude wrote and tested the airlines module: airline profiles,
+baggage policy, cancellation/refund policy, and the rule that a
+moderator can only edit their own airline. I tested it in Swagger
+(created EgyptAir) and committed it.
+================================================
+Date: 2026-11-09
+Student: Malak
+Tool: Claude
+Related Requirement: FLT-03, FLT-04, FLT-05, FLT-06, FLT-11, FLT-12, FLT-15, FLT-17
+
+Prompt:
+What else should I do as Member 2? (flights and flight search)
+
+How the output was used:
+Claude wrote and tested the flights module: creating flights in each
+airport's local time (stored in UTC), cabins with seats and prices,
+schedule changes, cancellation, and public one-way/round-trip search
+with passenger counts, cabin class, price filters, sorting and
+pagination. I tested creating and searching a flight in Swagger and
+committed it.
+================================================
+================================================
+=========================
+@'
+================================================
+Date: 2026-11-12
+Student: Nadeen Yasser
+Tool: Claude
+Related Requirement: FLT-19, FLT-21, FLT-22, FLT-23, FLT-25, FLT-26, FLT-29
+
+Prompt:
+Design and implement the flight booking module (Member 3) for our
+NestJS + MongoDB backend: concurrency-safe temporary seat holds that
+expire and release inventory, passenger and baggage details, booking
+history, cancellation with refunds based on the airline's policy,
+e-tickets, and a passenger list for airline moderators. Explain how to
+integrate each file into the existing project.
+
+How the output was used:
+Used the generated module as the basis for the flight booking feature.
+Seats are reserved with a single atomic MongoDB update per cabin, so
+concurrent requests cannot overbook; a background job releases expired
+holds. Reviewed the code, integrated it into the project, ran it
+against our Atlas database, and verified concurrency with a test in
+which 20 simultaneous requests competed for 5 seats (exactly 5
+succeeded).
+================================================
+Date: 2026-11-13
+Student: Nadeen Yasser
+Tool: Claude
+Related Requirement: FLT-19, FLT-21, FLT-22, FLT-23, FLT-25, FLT-26, FLT-29
+
+Prompt	:Review the flight booking module against the API table in sections
+8.3 and 8.4 of the project description, align every endpoint with it,
+and organise the work into separate pull requests following the
+project's Git workflow.
+
+How the output was used:
+Restructured booking into the two steps defined in the specification
+(POST /api/flight-bookings/hold, then POST /api/flight-bookings with
+passenger and baggage details), aligned the list and cancellation
+endpoints, and added GET /api/flights/:id/bookings and the passenger
+CSV export (FLT-29). The review also found and fixed a validation bug
+that returned 500 instead of 400. Submitted the work as four pull
+requests (seat holds, cancellation, e-ticket, moderator views) and
+re-ran the concurrency test against Atlas (PASS).
+================================================
+'@ | Add-Content -Path AI_PROMPTS.txt -Encoding ascii================================================
+Date: 2026-11-17
+Student: Hamza
+Tool: Claude
+Related Requirement: HTL-01 to HTL-23, GEN-08 (hotel photos), PAY-04
+
+Prompt:
+Study our team's planning chat (I am Member 4) and the leader's
+Member 4 task list from the requirements workbook, then build Member 4:
+hotels, rooms, bookable date ranges, blocks, room calendar, policies,
+hotel search, available rooms, multi-room booking with a 10-minute
+hold that is concurrency-safe, my reservations, refund preview and
+cancel, moderator reservations, and the Completed status.
+
+How the output was used:
+Claude wrote the hotels and hotel-bookings modules following the
+flight booking module's patterns and the team's naming agreements
+("hotelbookings" with user, status, checkIn/checkOut as dates, USD,
+getForPayment/confirm/markRefunded). Every taken room night is a
+document with a unique (room, date) index, and a reservation is saved
+with all its nights in one MongoDB transaction, so overlapping or
+partial reservations are impossible. It was tested end to end (131
+checks, including 20 parallel requests for the same room: exactly 1
+succeeded). I reviewed the code, ran it against our Atlas database
+and ran scripts/check-room-race.js before opening the pull requests.
+================================================
+================================================
+Date: 2026-11-05
+Student: Judy Elrayess
+Tool: Claude
+Related Requirement: GEN-07, ACC-13, ACC-14, ACC-15, ACC-16, ACC-07a
+
+Prompt:
+I'm Member 1. Help me build the audit log and the admin account
+management: create moderators for an airline or hotel, list and filter
+accounts, suspend and reactivate accounts, and admin password reset.
+
+How the output was used:
+Claude wrote the audit module (shared AuditService.log() that every
+module calls, plus GET /api/admin/audit-logs with filters) and the
+admin accounts endpoints. Suspended users are blocked on their next
+request, admins cannot act on themselves or other admins, and the
+password reset returns a one-time temporary password. I tested each
+endpoint in Swagger and opened PRs #3 and #4.
+================================================
+Date: 2026-11-08
+Student: Judy Elrayess
+Tool: Claude
+Related Requirement: GEN-09, GEN-10
+
+Prompt:
+Build user content reports and admin moderation: users report a post,
+comment, review or itinerary, and the admin can dismiss the report,
+hide the content, or delete it.
+
+How the output was used:
+Claude wrote the reports module (POST /api/reports, GET and PATCH
+/api/admin/reports, DELETE /api/admin/content/:type/:id) with a shared
+content-moderation service and an isHidden rule for teammates' models.
+I added it to app.module, checked it compiled and returned 404 for
+unknown content, and opened PR #5.
+================================================
+Date: 2026-11-17
+Student: Judy Elrayess
+Tool: Claude
+Related Requirement: ACC-13, ACC-15, ACC-17
+
+Prompt:
+What's left for me as Member 1? Check that the provider exists when
+creating a moderator, add admin deactivate/reactivate for airlines and
+hotels, add the admin view of all bookings, and remove the pre-filled
+Swagger examples from the filter DTOs.
+
+How the output was used:
+Claude added the provider check (404 for an unknown airline/hotel),
+PATCH /api/admin/airlines|hotels/:id/deactivate and /reactivate with
+audit logging, and GET /api/admin/bookings with type, status, user,
+provider and date filters. It added setActive() to the airlines
+service and listAll() to the flight-bookings service for this. I
+tested it in Swagger (created a test hotel and airline, deactivated
+and reactivated them, checked search, audit log and 403 for normal
+users) and opened the PR.
+================================================
+================================================
+Date: 2026-11-18
+Student: Youssef Samy
+Tool: Claude
+Related Requirement: GEN-01
+
+Prompt:
+This is my project, I am Member 6 (payments, refunds and notifications).
+Do my part from the leader's task list, starting with GEN-01 notifications
+because everyone is waiting for it.
+
+How the output was used:
+Claude added a global NotificationsModule with notify()/notifyMany(),
+GET /api/notifications (paginated, unreadOnly), GET unread-count,
+PATCH :id/read and PATCH read-all, and filled the notify TODOs left by
+Members 1-4 (booking confirmed/cancelled, flight cancelled, schedule
+change, account suspend/reactivate, provider deactivation, reports).
+I checked it built, started the API and called every endpoint.
+================================================
+================================================
+Date: 2026-11-18
+Student: Youssef Samy
+Tool: Claude
+Related Requirement: PAY-01, PAY-02, PAY-03, PAY-04
+
+Prompt:
+Continue my Member 6 part: policies before payment, Stripe payments
+with the webhook, retry and hold expiry, and refunds for cancellations.
+
+How the output was used:
+Claude added GET/POST /api/bookings/:type/:id/policies|accept-policies
+(acceptance stored with a timestamp), POST /api/payments, retry, GET and
+the signed webhook (booking confirmed only by payment_intent.succeeded),
+a job that cancels PaymentIntents when the hold expires, and a refunds
+service (Stripe Refunds API, Refund records, GET /api/refunds/:id,
+refund webhooks, notifications). It added FAILED and refundReference to
+flight bookings so they match hotels. I tested the policy gate and the
+webhook flows (confirm, decline, refund) against the running API.
+================================================
+Date: 2026-11-19
+Student: Youssef Khaled (Member 7)
+Tool: Claude
+Related Requirement: ITN-01, ITN-03, ITN-05, ITN-07, ITN-08, ITN-09, ITN-20
+
+Prompt:
+I am Member 7 (itineraries, budgets and exchange rates). Here is the team
+leader's context with the workbook rules and exact endpoints. Build my part
+on feature branches, starting with itinerary CRUD and days.
+
+How the output was used:
+Claude wrote the itineraries module: create/edit/delete itineraries
+(private by default), my-itineraries list, days with city and notes,
+insert/move/delete with automatic renumbering and dates from the start
+date, city groups, and public/private visibility. I tested every rule
+against a local test database before committing.
+================================================
+Date: 2026-11-19
+Student: Youssef Khaled (Member 7)
+Tool: Claude
+Related Requirement: ITN-10, ITN-12, ITN-14, ITN-16, GEN-08
+
+Prompt:
+Continue my part: activities with images, budget entries per day,
+intercity transport costs and the budget summary.
+
+How the output was used:
+Claude added activities (name, description, optional time and cost),
+activity images stored in MongoDB like the blog (JPG/PNG, 5 MB, max 5),
+budget entries by category and currency, transport costs between cities,
+and a summary by category, day, city group and total. Deleting a day
+removes its transport costs and image files. I tested it against a local
+test database before committing.
+================================================
+Date: 2026-11-19
+Student: Youssef Khaled (Member 7)
+Tool: Claude
+Related Requirement: ITN-18, ITN-09, ITN-14
+
+Prompt:
+Add exchange rates: fetch from FXRatesAPI once per day, cache them in the
+database, convert every itinerary budget amount to the user's preferred
+currency and handle invalid currencies, missing rates and API failures.
+
+How the output was used:
+Claude added the exchange-rates module (daily cron + fetch on startup,
+cached in the exchangerates collection, last cached rates used when the API
+is down) and converted the budget summary, day totals and city-group
+subtotals with the rate date shown. I tested real rates, invalid codes,
+the API being down, and no cached rates at all.
+================================================
+Date: 2026-11-19
+Student: Youssef Khaled (Member 7)
+Tool: Claude
+Related Requirement: ITN-20, ITN-21, ITN-25, ITN-26
+
+Prompt:
+Finish my part: public itinerary search and read-only view, cloning, and
+hotel and flight search from an itinerary.
+
+How the output was used:
+Claude added public search (keyword on title/country/city, duration,
+country and city filters), the read-only public view with author and
+budget, cloning into an independent private copy that credits the author
+(images copied too), hotels for a city group's dates and flights to the
+day-1 city, reusing Member 4's hotel search and Member 2's flight search.
+I tested search, hidden/private rules, clone independence, and a real
+round-trip flight search against a local test database.
+================================================
+Date: 2026-11-20
+Student: Nadeen Yasser (Member 3)
+Tool: Claude
+Related Requirement: FLT-21, FLT-22, FLT-23, FLT-25, FLT-26
+
+Prompt:
+I am Member 3 (flight bookings). Fix what is still missing against the
+workbook: 10-minute seat hold, no 2-hour booking cut-off, passport/ID for
+every passenger, round-trip refund by the outbound flight's tier, a refund
+preview before cancelling, Upcoming/Past/Cancelled groups with a Completed
+status, and the e-ticket as a PDF.
+
+How the output was used:
+Claude changed the hold to 10 minutes, removed the cut-off (only departed
+flights are blocked), added a required passport/ID number per passenger
+(shown on the e-ticket and the CSV passenger list), applied the outbound
+flight's refund tier to the whole booking, added GET
+/api/flight-bookings/:id/cancel-preview, grouped "My bookings" into
+upcoming/past/cancelled with a background job that marks fully departed
+trips "completed", and made GET /:id/e-ticket download a PDF (?format=json
+for JSON). I tested every case against a local test database, including a
+rescheduled flight and a round trip where only the outbound had departed.
+================================================
+Date: 2026-11-20
+Student: Renad Raafat (Team leader)
+Tool: Claude
+Related Requirement: Optional bonuses: ACC-02, ACC-07, email notifications, FLT-27, FLT-28, HTL-26, ITN-27, ITN-28, BLG-13, admin analytics, favourites
+
+Prompt:
+All mandatory requirements are done and tested. Now do the optional bonus
+features fully, each on its own branch, without breaking any member's work.
+
+How the output was used:
+Claude built, in stacked PRs #41 to #46: hotel replies to reviews (HTL-26);
+attaching confirmed bookings to itineraries and itinerary PDF export
+(ITN-27, ITN-28); attaching a public itinerary to a blog post (BLG-13); seat
+selection with a race-safe seat map and changing to another flight of the
+same airline/route/cabin (FLT-28, FLT-27); email verification, forgotten
+password by email and email copies of notifications through SMTP with a
+terminal fallback (ACC-02, ACC-07); an admin analytics dashboard and
+favourites for hotels, public itineraries and posts. Every feature has its
+own end-to-end test against a local database (and a local SMTP server for
+email), and every member's test suite was rerun after the changes. Rules the
+workbook leaves open (e.g. change-flight fare rules) are documented in each PR.
+================================================

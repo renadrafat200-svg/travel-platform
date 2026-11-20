@@ -8,3 +8,6 @@ Thumbs.db
 coverage/
 uploads/
 *.tsbuildinfo
+Claude outputs/
+
+.vs/

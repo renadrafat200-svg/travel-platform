@@ -1,0 +1,220 @@
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Res, StreamableFile } from '@nestjs/common';
+import {
+    ApiBadRequestResponse,
+    ApiConflictResponse,
+    ApiCookieAuth,
+    ApiCreatedResponse,
+    ApiForbiddenResponse,
+    ApiNotFoundResponse,
+    ApiOkResponse,
+    ApiOperation,
+    ApiProduces,
+    ApiTags,
+} from '@nestjs/swagger';
+import type { Response } from 'express';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { Role } from '../common/enums/role.enum';
+import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import {
+    CancelFlightBookingDto,
+    ChangeFlightDto,
+    SelectSeatDto,
+    CreateFlightBookingDto,
+    ETicketQueryDto,
+    FlightBookingsQueryDto,
+    HoldFlightDto,
+    MyFlightBookingsQueryDto,
+} from './dto/flight-booking.dto';
+import { buildETicketPdf } from './e-ticket.pdf';
+import { FlightBookingChangesService } from './flight-booking-changes.service';
+import { FlightBookingsService } from './flight-bookings.service';
+
+/** Endpoints exactly as in section 8.4 of the project description */
+@ApiTags('Flight bookings')
+@ApiCookieAuth('access_token')
+@Controller('flight-bookings')
+export class FlightBookingsController {
+    constructor(
+        private readonly bookings: FlightBookingsService,
+        private readonly changes: FlightBookingChangesService,
+    ) { }
+
+    @Post('hold')
+    @Roles(Role.USER)
+    @ApiOperation({
+        summary: 'Step 1: hold seats on a one-way or round-trip flight while you book (FLT-22)',
+    })
+    @ApiCreatedResponse({ description: 'Pending booking (the hold) with holdExpiresAt and fares' })
+    @ApiBadRequestResponse({ description: 'Cancelled flight, booking closed, wrong counts' })
+    @ApiConflictResponse({ description: 'Not enough seats, or too many unpaid bookings' })
+    @ApiNotFoundResponse({ description: 'Flight not found' })
+    hold(@CurrentUser() user: AuthUser, @Body() dto: HoldFlightDto) {
+        return this.bookings.hold(user, dto);
+    }
+
+    @Post()
+    @HttpCode(200)
+    @Roles(Role.USER)
+    @ApiOperation({
+        summary: 'Step 2: passenger details and extra baggage for a hold (FLT-19, FLT-21)',
+    })
+    @ApiOkResponse({ description: 'Booking with passengers, bag fees and the final total' })
+    @ApiBadRequestResponse({ description: 'Passengers do not match the hold, or hold not pending' })
+    @ApiConflictResponse({ description: 'The hold expired' })
+    @ApiForbiddenResponse({ description: 'Not your hold' })
+    addDetails(@CurrentUser() user: AuthUser, @Body() dto: CreateFlightBookingDto) {
+        return this.bookings.addPassengerDetails(user, dto);
+    }
+
+    @Get()
+    @ApiOperation({ summary: 'My flight bookings grouped as upcoming, past and cancelled (FLT-25)' })
+    @ApiOkResponse({
+        description:
+            '{ upcoming, past, cancelled }, or one paginated group with ?group=, or a flat list with ?status=',
+    })
+    findMine(@CurrentUser() user: AuthUser, @Query() query: MyFlightBookingsQueryDto) {
+        return this.bookings.findMine(user, query);
+    }
+
+    @Get(':id')
+    @ApiOperation({ summary: 'One of my flight bookings (FLT-25)' })
+    @ApiOkResponse({ description: 'Booking details' })
+    @ApiForbiddenResponse({ description: 'Not your booking' })
+    @ApiNotFoundResponse({ description: 'Booking not found' })
+    findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+        return this.bookings.findOne(user, id);
+    }
+
+    // ---------- FLT-28 (optional): seat selection ----------
+
+    @Get(':id/seats')
+    @ApiOperation({ summary: 'Seat map of my cabin on each flight of the booking, with free seats and my passengers’ seats (FLT-28, optional)' })
+    @ApiOkResponse({ description: '{ flights: [{ flightId, cabinClass, seats: [{ seat, free }], myPassengers }] }' })
+    @ApiForbiddenResponse({ description: 'Not your booking' })
+    seats(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+        return this.changes.seatsView(user, id);
+    }
+
+    @Patch(':id/seat')
+    @ApiOperation({
+        summary: 'Choose or change a passenger’s seat on one flight of my booking (FLT-28, optional)',
+        description: 'Allowed once passenger details are added (pending) or after payment, until the flight departs. Infants have no seat.',
+    })
+    @ApiOkResponse({ description: 'The updated seat map' })
+    @ApiBadRequestResponse({ description: 'Seat not in my cabin, infant, departed flight or wrong booking state' })
+    @ApiConflictResponse({ description: 'Seat already taken' })
+    @ApiForbiddenResponse({ description: 'Not your booking' })
+    selectSeat(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: SelectSeatDto) {
+        return this.changes.selectSeat(user, id, dto);
+    }
+
+    // ---------- FLT-27 (optional): change flight ----------
+
+    @Patch(':id/change-flight')
+    @ApiOperation({
+        summary: 'Move one flight of my paid booking to another flight of the same airline and route (FLT-27, optional)',
+        description:
+            'Same cabin class; the new fare for the same passengers must not be higher than the fare paid (the price paid stays the same). Seats move atomically, ticket numbers stay, and I get a notification.',
+    })
+    @ApiOkResponse({ description: 'The booking with the new flight and its change history' })
+    @ApiBadRequestResponse({ description: 'Not paid, departed, different airline/route/cabin, higher fare or wrong order' })
+    @ApiConflictResponse({ description: 'No seats left on the new flight' })
+    @ApiNotFoundResponse({ description: 'Booking or flight not found' })
+    changeFlight(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ChangeFlightDto) {
+        return this.changes.changeFlight(user, id, dto);
+    }
+
+    @Get(':id/cancel-preview')
+    @ApiOperation({
+        summary: 'How much would be refunded if I cancel now, without cancelling (FLT-26)',
+    })
+    @ApiOkResponse({
+        description:
+            '{ cancellable, reason?, hoursBeforeDeparture, refundPercent, refundAmount, totalAmount, currency }',
+    })
+    @ApiForbiddenResponse({ description: 'Not your booking' })
+    @ApiNotFoundResponse({ description: 'Booking not found' })
+    cancelPreview(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+        return this.bookings.cancelPreview(user, id);
+    }
+
+    @Post(':id/cancel')
+    @HttpCode(200)
+    @ApiOperation({
+        summary: 'Cancel a booking; paid bookings get a refund from the airline’s policy (FLT-26)',
+    })
+    @ApiOkResponse({ description: 'Cancelled booking with refundPercent and refundAmount' })
+    @ApiBadRequestResponse({ description: 'Already cancelled/expired, or the flight has departed' })
+    @ApiForbiddenResponse({ description: 'Not your booking' })
+    cancel(
+        @CurrentUser() user: AuthUser,
+        @Param('id') id: string,
+        @Body() dto: CancelFlightBookingDto,
+    ) {
+        return this.bookings.cancel(user, id, dto);
+    }
+
+    @Get(':id/e-ticket')
+    @ApiOperation({ summary: 'Download the e-ticket of a confirmed booking as a PDF (FLT-23)' })
+    @ApiProduces('application/pdf', 'application/json')
+    @ApiOkResponse({
+        description:
+            'PDF file with ticket numbers, passengers (with passport/ID) and current flight times; JSON with ?format=json',
+    })
+    @ApiBadRequestResponse({ description: 'Booking is not confirmed' })
+    @ApiForbiddenResponse({ description: 'Not your booking' })
+    async eTicket(
+        @CurrentUser() user: AuthUser,
+        @Param('id') id: string,
+        @Query() query: ETicketQueryDto,
+        @Res({ passthrough: true }) res: Response,
+    ) {
+        const ticket = await this.bookings.eTicket(user, id);
+        if (query.format === 'json') return ticket;
+        const pdf = await buildETicketPdf(ticket);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="e-ticket-${ticket.reference}.pdf"`);
+        return new StreamableFile(pdf);
+    }
+}
+
+/** Airline moderator views (section 8.3, FLT-29), under /api/flights next to the flight */
+@ApiTags('Flight bookings')
+@ApiCookieAuth('access_token')
+@Controller('flights')
+export class FlightPassengersController {
+    constructor(private readonly bookings: FlightBookingsService) { }
+
+    @Get(':id/bookings')
+    @Roles(Role.AIRLINE_MODERATOR, Role.ADMIN)
+    @ApiOperation({ summary: 'Bookings on one of my airline’s flights (FLT-29)' })
+    @ApiOkResponse({ description: 'Paginated bookings, filter by status' })
+    @ApiForbiddenResponse({ description: 'Not your airline' })
+    @ApiNotFoundResponse({ description: 'Flight not found' })
+    bookingsForFlight(
+        @CurrentUser() user: AuthUser,
+        @Param('id') id: string,
+        @Query() query: FlightBookingsQueryDto,
+    ) {
+        return this.bookings.bookingsForFlight(user, id, query);
+    }
+
+    @Get(':id/passengers/export')
+    @Roles(Role.AIRLINE_MODERATOR, Role.ADMIN)
+    @ApiOperation({ summary: 'Download the passenger list as CSV (FLT-29)' })
+    @ApiProduces('text/csv')
+    @ApiOkResponse({ description: 'CSV file of passengers with confirmed tickets' })
+    @ApiForbiddenResponse({ description: 'Not your airline' })
+    @ApiNotFoundResponse({ description: 'Flight not found' })
+    async exportPassengers(
+        @CurrentUser() user: AuthUser,
+        @Param('id') id: string,
+        @Res() res: Response,
+    ) {
+        const { fileName, csv } = await this.bookings.exportPassengersCsv(user, id);
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.send(csv);
+    }
+}

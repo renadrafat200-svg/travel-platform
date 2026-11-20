@@ -1,0 +1,215 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import {
+    ArrayMaxSize,
+    ArrayMinSize,
+    IsArray,
+    IsDefined,
+    IsEnum,
+    IsIn,
+    IsInt,
+    IsMongoId,
+    IsOptional,
+    IsString,
+    Length,
+    Matches,
+    Max,
+    MaxLength,
+    Min,
+    ValidateNested,
+} from 'class-validator';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { CabinClass } from '../../flights/schemas/flight.schema';
+import { MAX_EXTRA_BAGS, MAX_PASSENGERS } from '../flight-booking.constants';
+import { BookingStatus } from '../schemas/flight-booking.schema';
+
+/** Which flight and which cabin */
+export class LegSelectionDto {
+    @ApiProperty({ example: '6a0f1c2d3e4f5a6b7c8d9e0f', description: 'Flight id from flight search' })
+    @IsMongoId()
+    flightId: string;
+
+    @ApiProperty({ enum: CabinClass, example: CabinClass.ECONOMY })
+    @IsEnum(CabinClass)
+    cabinClass: CabinClass;
+}
+
+/** POST /api/flight-bookings/hold (FLT-22): step 1, hold the seats */
+export class HoldFlightDto {
+    @ApiProperty({ type: LegSelectionDto })
+    @IsDefined()
+    @ValidateNested()
+    @Type(() => LegSelectionDto)
+    outbound: LegSelectionDto;
+
+    @ApiPropertyOptional({
+        type: LegSelectionDto,
+        description: 'Only for a round trip: the flight back',
+    })
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => LegSelectionDto)
+    returnFlight?: LegSelectionDto;
+
+    @ApiProperty({
+        example: 2,
+        minimum: 1,
+        maximum: MAX_PASSENGERS,
+        description: '12 years or older',
+    })
+    @IsInt()
+    @Min(1)
+    @Max(MAX_PASSENGERS)
+    adults: number;
+
+    @ApiPropertyOptional({ example: 1, minimum: 0, default: 0, description: '2 to 11 years' })
+    @IsOptional()
+    @IsInt()
+    @Min(0)
+    @Max(MAX_PASSENGERS)
+    children?: number;
+
+    @ApiPropertyOptional({
+        example: 0,
+        minimum: 0,
+        default: 0,
+        description: 'Under 2 years, on an adult’s lap (no seat)',
+    })
+    @IsOptional()
+    @IsInt()
+    @Min(0)
+    @Max(MAX_PASSENGERS)
+    infants?: number;
+}
+
+export class PassengerDto {
+    @ApiProperty({ example: 'Malak' })
+    @IsString()
+    @Length(1, 50)
+    firstName: string;
+
+    @ApiProperty({ example: 'Ehab' })
+    @IsString()
+    @Length(1, 50)
+    lastName: string;
+
+    @ApiProperty({
+        example: '2004-05-17',
+        description: 'Decides adult / child / infant on the day of the outbound flight',
+    })
+    @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'dateOfBirth must look like 2004-05-17' })
+    dateOfBirth: string;
+
+    @ApiProperty({
+        example: 'A12345678',
+        description: 'Passport or national ID number: 5 to 20 letters and digits',
+    })
+    @IsString()
+    @Matches(/^[A-Za-z0-9]{5,20}$/, {
+        message: 'passportNumber must be 5 to 20 letters and digits (passport or national ID)',
+    })
+    passportNumber: string;
+
+    @ApiPropertyOptional({ example: 1, minimum: 0, maximum: MAX_EXTRA_BAGS, default: 0 })
+    @IsOptional()
+    @IsInt()
+    @Min(0)
+    @Max(MAX_EXTRA_BAGS)
+    extraBags?: number;
+}
+
+/** POST /api/flight-bookings (FLT-19, FLT-21): step 2, passenger details and extra baggage */
+export class CreateFlightBookingDto {
+    @ApiProperty({
+        example: '6a0f1c2d3e4f5a6b7c8d9e0f',
+        description: 'The id returned by POST /hold',
+    })
+    @IsMongoId()
+    holdId: string;
+
+    @ApiProperty({ type: [PassengerDto] })
+    @IsArray()
+    @ArrayMinSize(1)
+    @ArrayMaxSize(MAX_PASSENGERS)
+    @ValidateNested({ each: true })
+    @Type(() => PassengerDto)
+    passengers: PassengerDto[];
+}
+
+/** FLT-25: how "My bookings" is grouped */
+export const BOOKING_GROUPS = ['upcoming', 'past', 'cancelled'] as const;
+export type BookingGroup = (typeof BOOKING_GROUPS)[number];
+
+/** GET /api/flight-bookings (FLT-25) */
+export class MyFlightBookingsQueryDto extends PaginationQueryDto {
+    @ApiPropertyOptional({
+        enum: BOOKING_GROUPS,
+        description:
+            'Only one group, paginated. Without it (and without status), all three groups are returned (first page each).',
+    })
+    @IsOptional()
+    @IsIn(BOOKING_GROUPS)
+    group?: BookingGroup;
+
+    @ApiPropertyOptional({ enum: BookingStatus, description: 'Or: one exact status, as a flat list' })
+    @IsOptional()
+    @IsEnum(BookingStatus)
+    status?: BookingStatus;
+}
+
+/** GET /api/flights/:id/bookings (FLT-29) */
+export class FlightBookingsQueryDto extends PaginationQueryDto {
+    @ApiPropertyOptional({ enum: BookingStatus })
+    @IsOptional()
+    @IsEnum(BookingStatus)
+    status?: BookingStatus;
+}
+
+/** GET /api/flight-bookings/:id/e-ticket (FLT-23) */
+export class ETicketQueryDto {
+    @ApiPropertyOptional({
+        enum: ['pdf', 'json'],
+        default: 'pdf',
+        description: 'pdf = downloadable e-ticket file; json = the same data as JSON',
+    })
+    @IsOptional()
+    @IsIn(['pdf', 'json'])
+    format?: 'pdf' | 'json';
+}
+
+/** POST /api/flight-bookings/:id/cancel (FLT-26) */
+export class CancelFlightBookingDto {
+    @ApiPropertyOptional({ example: 'Change of plans' })
+    @IsOptional()
+    @IsString()
+    @MaxLength(500)
+    reason?: string;
+}
+/** PATCH /api/flight-bookings/:id/seat (FLT-28, optional) */
+export class SelectSeatDto {
+    @ApiProperty({ description: 'Which flight of the booking (flightId from the booking)' })
+    @IsMongoId()
+    flightId: string;
+
+    @ApiProperty({ example: 1, minimum: 1, description: 'Passenger number in the booking (1 = first passenger)' })
+    @IsInt()
+    @Min(1)
+    @Max(MAX_PASSENGERS)
+    passenger: number;
+
+    @ApiProperty({ example: '12A', description: 'A free seat of the booked cabin (see GET /api/flight-bookings/{id}/seats)' })
+    @IsString()
+    @Matches(/^\d{1,3}[A-Fa-f]$/, { message: 'seat must look like 12A' })
+    seat: string;
+}
+
+/** PATCH /api/flight-bookings/:id/change-flight (FLT-27, optional) */
+export class ChangeFlightDto {
+    @ApiProperty({ description: 'The flight of the booking to replace (its flightId)' })
+    @IsMongoId()
+    currentFlightId: string;
+
+    @ApiProperty({ description: 'The new flight: same airline, same route, same cabin class' })
+    @IsMongoId()
+    newFlightId: string;
+}
