@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -16,6 +17,7 @@ import {
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
+  ApiQuery,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
@@ -217,6 +219,43 @@ export class RoomsController {
     @CurrentUser() user?: AuthUser,
   ) {
     return this.rooms.listRanges(hotelId, roomId, user);
+  }
+
+  // The project PDF's path: the range is chosen with ?rangeId= (or is the room's only range)
+  @Patch(':roomId/availability')
+  @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
+  @ApiOperation({
+    summary: 'Change a bookable range of a room (HTL-05, HTL-06)',
+    description:
+      'Pass ?rangeId= (from GET .../availability). If the room has exactly one range it is used. Same rules as PATCH .../availability/{rangeId}.',
+  })
+  @ApiQuery({ name: 'rangeId', required: false })
+  @ApiOkResponse({ description: 'Updated range' })
+  @ApiBadRequestResponse({ description: 'rangeId needed (the room has several ranges, or none)' })
+  @ApiConflictResponse({
+    description:
+      'Overlaps another range, or would remove nights with a confirmed reservation',
+  })
+  @ApiForbiddenResponse({ description: 'Not your hotel' })
+  async updateRangeByQuery(
+    @CurrentUser() user: AuthUser,
+    @Param('hotelId') hotelId: string,
+    @Param('roomId') roomId: string,
+    @Body() dto: DateRangeDto,
+    @Query('rangeId') rangeId?: string,
+  ) {
+    if (!rangeId) {
+      const { items } = await this.rooms.listRanges(hotelId, roomId, user);
+      if (items.length !== 1) {
+        throw new BadRequestException(
+          items.length
+            ? `This room has ${items.length} ranges: add ?rangeId= (ids from GET .../availability)`
+            : 'This room has no bookable range yet: add one with POST .../availability',
+        );
+      }
+      rangeId = items[0].id;
+    }
+    return this.rooms.updateRange(user, hotelId, roomId, rangeId, dto);
   }
 
   @Patch(':roomId/availability/:rangeId')

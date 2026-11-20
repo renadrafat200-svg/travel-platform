@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Patch } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Param, Patch } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiCookieAuth,
@@ -6,6 +6,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -57,5 +58,44 @@ export class AdminProvidersController {
   @ApiNotFoundResponse({ description: 'Hotel not found' })
   reactivateHotel(@CurrentUser() admin: AuthUser, @Param('id') id: string, @Body() dto: AccountActionDto) {
     return this.providers.setHotelActive(admin, id, true, dto.reason);
+  }
+
+  // The project PDF's paths (section 8): one route for both kinds of provider
+
+  @Patch('providers/:type/:id/deactivate')
+  @ApiParam({ name: 'type', enum: ['airline', 'hotel'] })
+  @ApiOperation({ summary: 'Deactivate an airline or a hotel: hidden from search and not bookable (ACC-15)' })
+  @ApiOkResponse({ description: 'Provider deactivated; existing confirmed bookings stay valid' })
+  @ApiBadRequestResponse({ description: 'Unknown type, or already deactivated' })
+  @ApiNotFoundResponse({ description: 'Provider not found' })
+  deactivateProvider(
+    @CurrentUser() admin: AuthUser,
+    @Param('type') type: string,
+    @Param('id') id: string,
+    @Body() dto: AccountActionDto,
+  ) {
+    return this.setProvider(admin, type, id, false, dto.reason);
+  }
+
+  @Patch('providers/:type/:id/reactivate')
+  @ApiParam({ name: 'type', enum: ['airline', 'hotel'] })
+  @ApiOperation({ summary: 'Reactivate a deactivated airline or hotel (ACC-15)' })
+  @ApiOkResponse({ description: 'Provider active again' })
+  @ApiBadRequestResponse({ description: 'Unknown type, or already active' })
+  @ApiNotFoundResponse({ description: 'Provider not found' })
+  reactivateProvider(
+    @CurrentUser() admin: AuthUser,
+    @Param('type') type: string,
+    @Param('id') id: string,
+    @Body() dto: AccountActionDto,
+  ) {
+    return this.setProvider(admin, type, id, true, dto.reason);
+  }
+
+  private setProvider(admin: AuthUser, type: string, id: string, active: boolean, reason?: string) {
+    const kind = type.toLowerCase().replace(/s$/, '');
+    if (kind === 'airline') return this.providers.setAirlineActive(admin, id, active, reason);
+    if (kind === 'hotel') return this.providers.setHotelActive(admin, id, active, reason);
+    throw new BadRequestException('type must be "airline" or "hotel"');
   }
 }
